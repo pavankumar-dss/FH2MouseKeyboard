@@ -3,7 +3,7 @@
   python pad.py serve <path-to-ViGEmClient.dll>     keeps the pad plugged in
   python pad.py <cmd> [; <cmd>...]                  sends commands to it
 
-Commands: press BUTTON [ms] | hold BUTTON ms | stick lx ly ms | trigger lt rt ms | wait ms | quit
+Commands: press BUTTON [ms] | hold BUTTON ms | stick lx ly ms | rstick rx ry ms | trigger lt rt ms | wait ms | quit
 Buttons: A B X Y LB RB START BACK UP DOWN LEFT RIGHT LS RS GUIDE
 """
 import ctypes
@@ -60,6 +60,9 @@ def serve(dll_path):
                 send(r); time.sleep(int(a[2]) / 1000 if len(a) > 2 else 0.12); send(Report())
             elif c == 'stick':
                 r.sThumbLX, r.sThumbLY = int(a[1]), int(a[2])
+                send(r); time.sleep(int(a[3]) / 1000); send(Report())
+            elif c == 'rstick':
+                r.sThumbRX, r.sThumbRY = int(a[1]), int(a[2])
                 send(r); time.sleep(int(a[3]) / 1000); send(Report())
             elif c == 'trigger':
                 r.bLeftTrigger, r.bRightTrigger = int(a[1]), int(a[2])

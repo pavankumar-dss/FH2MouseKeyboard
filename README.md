@@ -1,8 +1,8 @@
-<h1 align="center">FH2Mouse</h1>
+<h1 align="center">FH2 Mouse &amp; Keyboard</h1>
 
-A mouse cursor for **Forza Horizon 2** on PC (Azimuth). Point at things in the menus and click them, drag the map, turn the garage camera, place decals with the keyboard, and fly the photo mode camera, all without picking up a controller. The controller keeps working as before, and you can switch between the two at any time.
+A mouse cursor and keyboard controls for **Forza Horizon 2** on PC (Azimuth). Drive with the keyboard, point at things in the menus and click them, drag the map, turn the garage camera, place decals with the keyboard, and fly the photo mode camera, all without picking up a controller. The controller keeps working as before, and you can switch between the two at any time.
 
-FH2Mouse is a mod for the [FH2 Mod Platform](https://github.com/Trinculo54/fh2-mod-platform).
+FH2 Mouse & Keyboard (FH2Mouse) is a mod for the [FH2 Mod Platform](https://github.com/Trinculo54/fh2-mod-platform).
 
 ## Controls
 
@@ -28,6 +28,31 @@ On screens with nothing to point at (the title screen, videos, the wheelspin), a
 **Photo mode:** left drag to turn the camera, **W A S D** to move it, **Q / E** down / up, wheel to zoom, right click to exit.
 
 The cursor hides by itself a few seconds after you stop moving the mouse, and comes back when you move it.
+
+**Keyboard**
+
+| Key | While driving | In the menus |
+|---|---|---|
+| W / S | Gas / brake (and reverse) | |
+| ← / → | Steer | Left / right |
+| ↑ / ↓ | | Up / down (hold to repeat) |
+| Space | Handbrake | |
+| A / Z | Shift up / down (manual transmission) | |
+| Left Alt | Clutch | |
+| C | Change camera | |
+| Right Ctrl | Look back | |
+| R | Rewind | |
+| M | Map | |
+| P | Photo mode | |
+| , / . | Previous / next radio station | |
+| Left Ctrl | Nitro, with the [FnFNitro](https://github.com/qiangqiang101/NitroSystem) mod installed | |
+| Esc | Pause | B (back) |
+| Enter | Enter garage (and the HUD's other prompts) | A (select) |
+| Page Up / Page Down | | Previous / next tab (LB / RB) |
+
+The driving keys go straight to the game's own controls, not through a pretend controller, and only while you're driving, so a key can do one thing while driving and another in the menus. W in photo mode still moves the photo camera. The menu keys, Esc's pause and the radio keys hold the pad's own buttons for the game, so the menus take them exactly as they take a pad's. No controller needs to be plugged in: Enter on the title screen signs you in without one. If a controller goes (unplugged, or its batteries run out) the keyboard plays on: no "Controller disconnected" message and no pause. Plug a pad back in and the game asks for its A, as usual, to pair it again. Look left / right can have keys too. With FnFNitro installed, Left Ctrl presses its nitro button (whichever its `NitroButton` is) for it alone: the game doesn't see it, and no controller is needed.
+
+Every key can be changed in the game, in **Pause > Settings > MODS**: each action has a "Key:" row, and left / right picks its key. The change takes effect at once. "Keyboard controls" there turns the keys off. The same keys are in the ini's `[Keyboard]` section, which takes any key and more than one per action.
 
 ## Installing
 
@@ -59,6 +84,10 @@ To remove it, delete `fh2-mods\FH2Mouse.dll` and the `FH2Mouse` folder.
 | `FrameRate` | `0` | The game's frame rate: `0` measures it (`platform.log` says what it found). Set it (`30`, `60`, `120`, `144`...) only if photo mode or the garage camera turns too fast or too slow |
 | `Debug` | `0` | Log what's under the cursor and every click to `fh2-mods\platform.log` |
 
+The `[Keyboard]` section (added to an older ini the first time this version starts) gives each action one or more keys, separated by spaces: `Gas=W Up`, `LookLeft=Q`, `Map=None`. Keys are letters, digits, `F1`-`F24`, `Num0`-`Num9` (with Num Lock on), `Left` `Right` `Up` `Down`, `Space`, `Enter`, `Escape`, `Tab`, `Backspace`, `Insert`, `Delete`, `Home`, `End`, `PageUp`, `PageDown`, `Shift`/`LShift`/`RShift`, `Ctrl`/`LCtrl`/`RCtrl`, `Alt`/`LAlt`/`RAlt`, `Comma`, `Period`, `Minus`, `Equals`, `Semicolon`, `Slash`, `Grave`, `LBracket`, `Backslash`, `RBracket`, `Quote`, or a virtual-key code (`0xNN`). The actions are `Gas`, `Brake`, `SteerLeft`, `SteerRight`, `Handbrake`, `ShiftUp`, `ShiftDown`, `Clutch`, `Camera`, `LookBack`, `LookLeft`, `LookRight`, `Rewind`, `Map`, `PhotoMode`, `RadioPrevious`, `RadioNext`, `Interact`, `Nitro` and `Pause` while driving, and `Accept`, `Back`, `Up`, `Down`, `Left`, `Right`, `PreviousTab` and `NextTab` in the menus. The MODS page offers the usual keys; one set in the ini that isn't among them shows there as it is. `Enabled=0` turns the keys off.
+
+The keys' rows need FH2 Mod Platform 2.8.0 or later (the one in the release zip); with an older one the keys work, set in the ini.
+
 ## Known limits
 
 - **"Ⓨ Change time"** in the pause menu comes from the *Extra Options – Weather Control* plugin, which reads the controller directly, so clicking it does nothing. Give the plugin a keyboard key (`ChangeTimeKeyboard` in its `EO_WeatherControl.ini`) to change the time without a controller.
@@ -67,7 +96,7 @@ To remove it, delete `fh2-mods\FH2Mouse.dll` and the `FH2Mouse` folder.
 
 ## When something doesn't work
 
-Look in `fh2-mods\platform.log` for the lines starting with `[FH2Mouse]`. If something's wrong, set `Debug=1` in the ini, reproduce it, and attach the log to an issue, together with which screen you were on.
+Look in `fh2-mods\platform.log` for the lines starting with `[FH2 Mouse & Keyboard]`. If something's wrong, set `Debug=1` in the ini, reproduce it, and attach the log to an issue, together with which screen you were on.
 
 ## How it works
 
@@ -78,7 +107,7 @@ The game's UI library still contains a mouse system, but the Xbox build never fe
 FH2Mouse builds with [llvm-mingw](https://github.com/mstorsjo/llvm-mingw/releases) and CMake, with the platform as a git submodule:
 
 ```bash
-git clone --recursive https://github.com/<you>/FH2Mouse
+git clone --recursive https://github.com/qiangqiang101/FH2Mouse
 cmake -S . -B build -G Ninja -DCMAKE_C_COMPILER=x86_64-w64-mingw32-clang -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-clang++ -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres
 cmake --build build
 ```

@@ -7,6 +7,7 @@
   wheel N              wheel notches (+ up, - down)
   xbutton 1|2          side button click
   key VK               tap a virtual key (hex like 0x1B or a letter)
+  kdown VK | kup VK    hold / release a virtual key
   wait MS              sleep
   focus                bring the game window to the front
 """
@@ -82,10 +83,24 @@ def focus():
     print('windows', best)
 
 
+def game_in_front():
+    cn = ctypes.create_unicode_buffer(64)
+    u32.GetClassNameW(u32.GetForegroundWindow(), cn, 64)
+    return cn.value == 'Azimuth.Game.Win32'
+
+
+INPUT_CMDS = {'move', 'click', 'rclick', 'down', 'up', 'wheel', 'xbutton', 'key', 'kdown', 'kup'}
+
+
 def run(cmd):
     a = cmd.split()
     if not a:
         return
+    # Keys and clicks go to whatever window is in front: never send them anywhere but the game
+    # (an Esc meant for the game, landing in an editor, cancels what's running there).
+    if a[0] in INPUT_CMDS and not game_in_front():
+        print('the game is not in front: stopping before', cmd)
+        sys.exit(1)
     c = a[0]
     if c == 'shot':
         os.makedirs(SHOTS, exist_ok=True)
@@ -112,6 +127,9 @@ def run(cmd):
         mouse(MOUSEEVENTF_XDOWN, int(a[1])); time.sleep(0.08); mouse(MOUSEEVENTF_XUP, int(a[1]))
     elif c == 'key':
         key(int(a[1], 16) if a[1].startswith('0x') else ord(a[1].upper()))
+    elif c in ('kdown', 'kup'):
+        vk = int(a[1], 16) if a[1].startswith('0x') else ord(a[1].upper())
+        u32.keybd_event(vk, u32.MapVirtualKeyW(vk, 0), 0 if c == 'kdown' else 2, 0)
     elif c == 'wait':
         time.sleep(int(a[1]) / 1000)
     elif c == 'focus':

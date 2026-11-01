@@ -1,4 +1,4 @@
-// FH2Mouse: a mouse cursor for Forza Horizon 2's menus.
+// FH2 Mouse & Keyboard: a mouse cursor for Forza Horizon 2's menus, and keys to drive with.
 //
 // The game's UI library (AVUI, a C++ take on WPF) has WPF's mouse code, but the Xbox build never
 // feeds it and its hit testing finds nothing. Once a frame, on the UI thread, this mod:
@@ -13,6 +13,8 @@
 
 #include <algorithm>
 #include <array>
+#include <xinput.h>
+#include <cctype>
 #include <atomic>
 #include <cstdarg>
 #include <cstdint>
@@ -163,13 +165,223 @@ struct Settings {
 
 std::wstring g_dir;
 
+// Keys for the car and the menus. The car's actions answer the game's own input queries
+// (driving is context 0, "the keyboard" below), and only count while driving. The menu's press
+// the pad's buttons, as clicks do, and only count in the menus. So one key can do both: Esc
+// pauses while driving and goes back in the menus, the arrows steer or move the selection.
+constexpr int KEY_PAUSE = 7;   // what the pad's Start sends (the menus' Pause)
+struct Action {
+    const char* name;    // in the ini
+    const char* label;   // on the Mods page
+    const char* keys;    // the default
+    int control;         // the driving control it pushes, or -1
+    float sign;          // which way, for the steering axis
+    int key;             // the menu key it presses, or 0
+    bool menu;           // counts in the menus (else while driving)
+    uint64_t pad = 0;    // the pad's own buttons it holds, for what doesn't ask by control
+};
+const Action kActions[] = {
+    {"Gas", "Gas", "W", 0, 1, 0, false},
+    {"Brake", "Brake / reverse", "S", 1, 1, 0, false},
+    {"SteerLeft", "Steer left", "Left", 2, -1, 0, false},
+    {"SteerRight", "Steer right", "Right", 2, 1, 0, false},
+    {"Handbrake", "Handbrake", "Space", 3, 1, 0, false},
+    {"ShiftUp", "Shift up", "A", 4, 1, 0, false},
+    {"ShiftDown", "Shift down", "Z", 5, 1, 0, false},
+    {"Clutch", "Clutch", "LAlt", 6, 1, 0, false},
+    {"Camera", "Change camera", "C", 17, 1, 0, false},
+    {"LookBack", "Look back", "RCtrl", 10, 1, 0, false},
+    {"LookLeft", "Look left", "None", 11, 1, 0, false},
+    {"LookRight", "Look right", "None", 12, 1, 0, false},
+    {"Rewind", "Rewind", "R", 20, 1, 0, false},
+    {"Map", "Map", "M", 22, 1, 0, false},
+    {"PhotoMode", "Photo mode", "P", 15, 1, 0, false},
+    // The radio reads the d-pad's buttons itself: left / right, with the bits the pad sets with them.
+    {"RadioPrevious", "Previous station", "Comma", -1, 0, 0, false, 0xC0000004ull},
+    {"RadioNext", "Next station", "Period", -1, 0, 0, false, 0xC0000008ull},
+    // The HUD's prompts ("Enter garage"): control 21, on X with an automatic gearbox and on Back
+    // with a manual one, asked by the HUD at 0x78B745.
+    {"Interact", "Enter garage (prompts)", "Enter", 21, 1, 0, false},
+    // FnFNitro's nitro (its own mod, which reads the pad's nitro button itself): see "FnFNitro".
+    {"Nitro", "Nitro (FnFNitro)", "LCtrl", -1, 0, 0, false},
+    // The menu's keys hold the pad's buttons too (Start, A, B, the d-pad), so every menu takes them
+    // as it takes the pad's; the key is what's pressed instead if that can't be done.
+    {"Pause", "Pause", "Escape", -1, 0, KEY_PAUSE, false, 0x10ull},
+    {"Accept", "Menu: select", "Enter", -1, 0, KEY_A, true, 0x1000ull},
+    {"Back", "Menu: back", "Escape", -1, 0, KEY_B, true, 0x2000ull},
+    {"Up", "Menu: up", "Up", -1, 0, KEY_UP, true, 0x140000001ull},
+    {"Down", "Menu: down", "Down", -1, 0, KEY_DOWN, true, 0x140000002ull},
+    {"Left", "Menu: left", "Left", -1, 0, KEY_LEFT, true, 0xC0000004ull},
+    {"Right", "Menu: right", "Right", -1, 0, KEY_RIGHT, true, 0xC0000008ull},
+    {"PreviousTab", "Menu: previous tab", "PageUp", -1, 0, KEY_LB, true, 0x100ull},
+    {"NextTab", "Menu: next tab", "PageDown", -1, 0, KEY_RB, true, 0x200ull},
+};
+constexpr int kActionCount = sizeof kActions / sizeof kActions[0];
+constexpr int kMaxKeys     = 4;
+bool g_keyboard            = true;
+std::array<std::array<int, kMaxKeys>, kActionCount> g_action_keys{};   // virtual keys, 0 = none
+std::array<std::string, kActionCount> g_action_text;                   // as in the ini
+std::wstring g_ini;
+
+std::wstring widen(const std::string& s) { return std::wstring(s.begin(), s.end()); }   // ASCII
+
+int vk_of(std::string k) {
+    for (char& c : k) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (k.size() == 1 && ((k[0] >= 'a' && k[0] <= 'z') || (k[0] >= '0' && k[0] <= '9'))) return std::toupper(k[0]);
+    if (k.size() > 2 && k[0] == '0' && k[1] == 'x') return static_cast<int>(std::strtol(k.c_str() + 2, nullptr, 16)) & 0xFF;
+    if (k.size() == 4 && !k.compare(0, 3, "num") && k[3] >= '0' && k[3] <= '9') return VK_NUMPAD0 + (k[3] - '0');
+    if (k.size() >= 2 && k.size() <= 3 && k[0] == 'f') {
+        const int n = std::atoi(k.c_str() + 1);
+        if (n >= 1 && n <= 24) return VK_F1 + n - 1;
+    }
+    static const struct { const char* name; int vk; } names[] = {
+        {"left", VK_LEFT}, {"right", VK_RIGHT}, {"up", VK_UP}, {"down", VK_DOWN}, {"space", VK_SPACE},
+        {"enter", VK_RETURN}, {"escape", VK_ESCAPE}, {"esc", VK_ESCAPE}, {"tab", VK_TAB}, {"backspace", VK_BACK},
+        {"insert", VK_INSERT}, {"delete", VK_DELETE}, {"home", VK_HOME}, {"end", VK_END}, {"pageup", VK_PRIOR},
+        {"pagedown", VK_NEXT}, {"shift", VK_SHIFT}, {"lshift", VK_LSHIFT}, {"rshift", VK_RSHIFT},
+        {"ctrl", VK_CONTROL}, {"lctrl", VK_LCONTROL}, {"rctrl", VK_RCONTROL}, {"alt", VK_MENU},
+        {"lalt", VK_LMENU}, {"ralt", VK_RMENU}, {"comma", VK_OEM_COMMA}, {"period", VK_OEM_PERIOD},
+        {"minus", VK_OEM_MINUS}, {"equals", VK_OEM_PLUS}, {"semicolon", VK_OEM_1}, {"slash", VK_OEM_2},
+        {"grave", VK_OEM_3}, {"lbracket", VK_OEM_4}, {"backslash", VK_OEM_5}, {"rbracket", VK_OEM_6},
+        {"quote", VK_OEM_7},
+    };
+    for (const auto& n : names)
+        if (k == n.name) return n.vk;
+    return 0;
+}
+
+// An action's keys from their text ("Up I"); unknown names are logged and left out.
+void set_action_keys(int i, const std::string& text) {
+    std::array<int, kMaxKeys> keys{};
+    int n = 0;
+    std::size_t p = 0;
+    while (n < kMaxKeys && (p = text.find_first_not_of(" ,", p)) != std::string::npos) {
+        const std::size_t e = text.find_first_of(" ,", p);
+        const std::string t = text.substr(p, e == std::string::npos ? std::string::npos : e - p);
+        p = e;
+        if (!_stricmp(t.c_str(), "none")) continue;
+        if (const int vk = vk_of(t)) keys[n++] = vk;
+        else g_api->log(g_mod, ("unknown key in [Keyboard]: " + t).c_str());
+    }
+    g_action_keys[i] = keys;
+    g_action_text[i] = n ? text : "None";
+}
+
+// Whether an Alt key is bound: then a tap of it mustn't open the window's system menu.
+bool alt_bound() {
+    for (const auto& keys : g_action_keys)
+        for (int vk : keys)
+            if (vk == VK_MENU || vk == VK_LMENU || vk == VK_RMENU) return true;
+    return false;
+}
+
+void load_keys(const std::wstring& ini) {
+    g_ini = ini;
+    // Inis from before the keyboard get its section, so the keys can be found.
+    wchar_t probe[4];
+    if (!GetPrivateProfileSectionW(L"Keyboard", probe, 4, ini.c_str())) {
+        std::string text = "\r\n; Keys for driving and the menus (also on Pause > Settings > MODS). One or more keys\r\n"
+                           "; each, separated by spaces: A-Z, 0-9, F1-F24, Num0-Num9 (with Num Lock on), Left, Right,\r\n"
+                           "; Up, Down, Space, Enter, Escape, Tab, Backspace, Insert, Delete, Home, End, PageUp,\r\n"
+                           "; PageDown, Shift, LShift, RShift, Ctrl, LCtrl, RCtrl, Alt, LAlt, RAlt, Comma, Period,\r\n"
+                           "; Minus, Equals, Semicolon, Slash, Grave, LBracket, Backslash, RBracket, Quote, or a\r\n"
+                           "; virtual-key code (0xNN). None leaves an action without a key. The driving keys only\r\n"
+                           "; work while driving and the menu ones only in the menus, so a key can be one of each.\r\n"
+                           "; Enabled=0 turns the keys off.\r\n"
+                           "[Keyboard]\r\nEnabled=1\r\n";
+        for (const Action& a : kActions) text += std::string(a.name) + "=" + a.keys + "\r\n";
+        if (HANDLE f = CreateFileW(ini.c_str(), FILE_APPEND_DATA, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+            f != INVALID_HANDLE_VALUE) {
+            DWORD n = 0;
+            WriteFile(f, text.data(), static_cast<DWORD>(text.size()), &n, nullptr);
+            CloseHandle(f);
+        }
+    }
+    g_keyboard = GetPrivateProfileIntW(L"Keyboard", L"Enabled", 1, ini.c_str()) != 0;
+    for (int i = 0; i < kActionCount; ++i) {
+        wchar_t buf[128] = {};
+        GetPrivateProfileStringW(L"Keyboard", widen(kActions[i].name).c_str(), widen(kActions[i].keys).c_str(), buf, 128,
+                                 ini.c_str());
+        std::string text;
+        for (const wchar_t* c = buf; *c; ++c) text += *c < 128 ? static_cast<char>(*c) : '?';
+        set_action_keys(i, text);
+    }
+}
+
+// ---- the keys on the Mods page (API 9) ----------------------------------------------------------
+// A choice row for each action: its key, from a list of the usual ones, or what the ini has if
+// that's something else. A change takes effect at once and goes to the ini.
+const char* const kKeyChoices[] = {
+    "None", "W", "A", "S", "D", "Q", "E", "R", "F", "C", "Z", "X", "M", "P", "Space", "Enter", "Escape", "Left",
+    "Right", "Up", "Down", "LShift", "RShift", "LCtrl", "RCtrl", "LAlt", "Tab", "PageUp", "PageDown", "Comma", "Period",
+};
+std::array<std::vector<std::string>, kActionCount> g_row_choices;   // what each row offers
+
+void keyboard_row_changed(void*, const char* key, int value) {
+    if (!std::strcmp(key, "Keyboard")) {
+        g_keyboard = value != 0;
+        WritePrivateProfileStringW(L"Keyboard", L"Enabled", value ? L"1" : L"0", g_ini.c_str());
+        return;
+    }
+    for (int i = 0; i < kActionCount; ++i) {
+        if (std::strcmp(key, (std::string("Key_") + kActions[i].name).c_str())) continue;
+        if (value < 0 || value >= static_cast<int>(g_row_choices[i].size())) return;
+        set_action_keys(i, g_row_choices[i][value]);
+        WritePrivateProfileStringW(L"Keyboard", widen(kActions[i].name).c_str(), widen(g_action_text[i]).c_str(),
+                                   g_ini.c_str());
+        return;
+    }
+}
+
+void add_keyboard_rows() {
+    if (g_api->api_version < 9) return;
+    FH2Setting on{};
+    on.size        = sizeof on;
+    on.key         = "Keyboard";
+    on.label       = "Keyboard controls";
+    on.description = "Drive with the keyboard and move around the menus with it. The Key rows below set the keys.";
+    on.value       = g_keyboard;
+    on.on_change   = keyboard_row_changed;
+    g_api->add_setting(g_mod, &on);
+    static std::string keys[kActionCount], labels[kActionCount];
+    const bool nitro = GetFileAttributesW((std::wstring(g_api->azimuth_dir) + L"\\fh2-mods\\FnFNitro.dll").c_str()) !=
+                       INVALID_FILE_ATTRIBUTES;
+    for (int i = 0; i < kActionCount; ++i) {
+        const Action& a = kActions[i];
+        if (!std::strcmp(a.name, "Nitro") && !nitro) continue;
+        auto& choices   = g_row_choices[i];
+        int value       = -1;
+        for (const char* c : kKeyChoices) {
+            if (!_stricmp(c, g_action_text[i].c_str())) value = static_cast<int>(choices.size());
+            choices.push_back(c);
+        }
+        if (value < 0) value = static_cast<int>(choices.size()), choices.push_back(g_action_text[i]);   // the ini's own
+        std::vector<const char*> names;
+        for (const std::string& c : choices) names.push_back(c.c_str());
+        keys[i]   = std::string("Key_") + a.name;
+        labels[i] = std::string("Key: ") + a.label;
+        FH2Setting s{};
+        s.size         = sizeof s;
+        s.key          = keys[i].c_str();
+        s.label        = labels[i].c_str();
+        s.description  = a.menu ? "The key for this in the menus. It does nothing while driving, so it can be a driving key too."
+                                : "The key for this while driving. It does nothing in the menus, so it can be a menu key too.";
+        s.kind         = FH2_SETTING_CHOICE;
+        s.choices      = names.data();
+        s.choice_count = static_cast<uint32_t>(names.size());
+        s.value        = value;
+        s.on_change    = keyboard_row_changed;
+        g_api->add_setting(g_mod, &s);
+    }
+}
+
 void load_settings() {
     g_dir = std::wstring(g_api->azimuth_dir) + L"\\FH2Mouse";
     CreateDirectoryW(g_dir.c_str(), nullptr);
     const std::wstring ini = g_dir + L"\\FH2Mouse.ini";
     if (GetFileAttributesW(ini.c_str()) == INVALID_FILE_ATTRIBUTES) {
         const char text[] =
-            "; FH2Mouse: a mouse cursor for Forza Horizon 2's menus. 0 = off, 1 = on.\r\n"
+            "; FH2 Mouse & Keyboard: a mouse cursor for Forza Horizon 2's menus, and keys to drive with. 0 = off, 1 = on.\r\n"
             "; Left click = A (or select what's clicked), right click = B, wheel = up/down,\r\n"
             "; mouse side buttons = LB/RB, middle click = right stick click. Help bar buttons\r\n"
             "; are clickable. Map: drag to pan, click to select or set a waypoint, wheel to zoom.\r\n"
@@ -202,6 +414,7 @@ void load_settings() {
     g_cfg.hide_ms     = GetPrivateProfileIntW(L"Mouse", L"HideAfterSeconds", 3, ini.c_str()) * 1000u;
     g_cfg.debug       = GetPrivateProfileIntW(L"Mouse", L"Debug", 0, ini.c_str()) != 0;
     g_cfg.frame_rate  = std::min(1000, static_cast<int>(GetPrivateProfileIntW(L"Mouse", L"FrameRate", 0, ini.c_str())));
+    load_keys(ini);
 }
 
 void logf(const char* fmt, ...) {
@@ -268,6 +481,8 @@ void push(Ev type, int a = 0) {
 
 // The cursor's shape: the window is asked on every mouse move. Azimuth hides it there.
 LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM w, LPARAM l) {
+    // Alt alone opens the window's menu, which stalls the game: not while Alt is a key of ours.
+    if (msg == WM_SYSCOMMAND && (w & 0xFFF0) == SC_KEYMENU && l == 0 && g_keyboard && alt_bound()) return 0;
     if (msg == WM_SETCURSOR && LOWORD(l) == HTCLIENT && g_cfg.enabled && game_active()) {
         const bool show = cursor_wanted();
         g_shown = show;
@@ -688,6 +903,139 @@ void dump_under_cursor() {
     if (uint8_t* f = focused_object()) logf("focus: %s", chain_of(f).c_str());
 }
 
+// ---- the keyboard -------------------------------------------------------------------------------
+// The game asks its input for controls by (context, control): WasPressed (0x1072510), GetAnalog
+// (0x106F040) and GetDigital (0x106E3E0), each first checking that the context is on for the
+// player (IsContextActive, 0x1072890). Driving is context 0: 0 gas, 1 brake, 2 steering (-1..1),
+// 3 handbrake, 4 / 5 shift up / down, 6 clutch, 9-12 the right stick's look up / back / left /
+// right, 15 photo mode, 17 camera, 20 rewind, 21 the HUD's prompts ("Enter garage"), 22 map. The car's keys answer those while context
+// 0 is on (so not in photo mode or the menus), as a pad would: held is 1, a press is "pressed"
+// once to each place that asks.
+constexpr uintptr_t RVA_CONTEXT_ACTIVE = 0x1072890;
+constexpr uintptr_t RVA_GET_DIGITAL    = 0x106E3E0;
+constexpr int kDriving = 0, kControls = 32;
+using ContextActiveFn = bool (*)(void* input, int context);
+using GetDigitalFn    = float (*)(void* input, int context, int control);
+GetDigitalFn o_get_digital = nullptr;   // hooked: the driving keys are on
+
+std::array<std::atomic<bool>, kActionCount> g_held{};   // set once a UI frame
+
+struct Edge {
+    uint32_t id = 0;   // counts presses
+    DWORD at    = 0;   // GetTickCount of the last
+    const void* from[8] = {};
+    uint32_t told[8]    = {};
+};
+Edge g_edges[kControls];   // by control, guarded by g_edge_mx
+std::mutex g_edge_mx;
+
+void key_press(int control) {
+    std::lock_guard<std::mutex> lock(g_edge_mx);
+    ++g_edges[control].id;
+    g_edges[control].at = GetTickCount();
+}
+
+std::atomic<bool> g_in_menu{true};       // a menu has the focus (the UI thread's in_menu, each frame)
+std::atomic<uint8_t*> g_player{nullptr};  // the input that last asked about a control: the player's
+
+bool driving(void* input, int context, int control) {
+    if (!g_keyboard || !o_get_digital || g_in_menu.load() || context != kDriving || control < 0 || control >= kControls ||
+        !game<ContextActiveFn>(RVA_CONTEXT_ACTIVE)(input, kDriving))
+        return false;
+    return true;
+}
+
+// The pad's own state: each frame the game's input update (0x1075490, once a frame from the main
+// loop) reads every player's pad into its input (+0x70, the buttons a bitmask at +0x78, the
+// pad's XInput bits and some of the game's own; last frame's at +0x128). What reads the buttons
+// themselves, like the radio's d-pad and the menus' tile grids, gets the keys' bits from there,
+// put in after the update, so to the game they're the pad's buttons, held, pressed and released.
+constexpr uintptr_t RVA_INPUT_UPDATE = 0x1075490;
+constexpr uintptr_t INPUT_CONNECTED  = 0x4;    // bool: its pad is there
+constexpr uintptr_t INPUT_BUTTONS    = 0x78;
+// A pad's state is at +0x70 (this frame) and +0x128 (the last, for what was just pressed):
+constexpr uintptr_t INPUT_STATE      = 0x70;
+constexpr uintptr_t INPUT_LAST_STATE = 0x128;
+constexpr uintptr_t STATE_BUTTONS    = 0x8;    // the buttons' bits
+constexpr uintptr_t STATE_DPAD       = 0x10;   // the d-pad as a direction: {dir, angle, length, x, y}
+
+// The d-pad's direction, as the pad gives it with its bits (what the tile grids go by): 0 up, 2
+// left, 4 down, 6 right (counterclockwise, 8 none), the angle from up, the length, x and y.
+void set_dpad(uint8_t* state, uint64_t bits) {
+    struct Dir { uint64_t bit; int dir; float angle, x, y; };
+    static const Dir dirs[] = {{1, 0, 0, 0, 1}, {4, 2, 1.5707964f, -1, 0}, {2, 4, 3.1415927f, 0, -1}, {8, 6, -1.5707964f, 1, 0}};
+    int* d = reinterpret_cast<int*>(state + STATE_DPAD);
+    if (*d != 8) return;   // the pad's own
+    for (const Dir& r : dirs) {
+        if (!(bits & r.bit)) continue;
+        float* f = reinterpret_cast<float*>(d + 1);
+        *d = r.dir, f[0] = r.angle, f[1] = 1, f[2] = r.x, f[3] = r.y;
+        return;
+    }
+}
+using InputUpdateFn = uintptr_t (*)(void* inputs, float dt);
+InputUpdateFn o_input_update = nullptr;
+
+uintptr_t input_update(void* inputs, float dt) {
+    const uintptr_t r = o_input_update(inputs, dt);
+    uint8_t* in       = g_player.load();
+    if (!in) return r;
+    uint64_t& buttons = *reinterpret_cast<uint64_t*>(in + INPUT_BUTTONS);
+    if (g_cfg.debug) {
+        static uint64_t last = 0;
+        if (buttons != last) logf("pad buttons %llx", static_cast<unsigned long long>(buttons));
+        last = buttons;
+    }
+    static uint8_t* last_in   = nullptr;
+    static uint64_t last_bits = 0;   // what the keys held last frame
+    if (in != last_in) last_in = in, last_bits = 0;
+    if (!g_keyboard) return r;
+    // The keys are its pad now: when the pad goes, the car (0x2FD9E3) stops reading an input
+    // that isn't connected and the HUD pauses the game for it, so it stays connected.
+    in[INPUT_CONNECTED] = 1;
+    uint64_t bits = 0;
+    for (int i = 0; i < kActionCount; ++i)
+        if (kActions[i].pad && g_held[i].load()) bits |= kActions[i].pad;
+    buttons |= bits;
+    if (bits & 0xF) set_dpad(in + INPUT_STATE, bits);
+    // Last frame's state is the pad's alone, so what the keys held then goes in there too:
+    // else a held key is a new press every frame (a tap ran down a whole list).
+    *reinterpret_cast<uint64_t*>(in + INPUT_LAST_STATE + STATE_BUTTONS) |= last_bits;
+    if (last_bits & 0xF) set_dpad(in + INPUT_LAST_STATE, last_bits);
+    last_bits = bits;
+    return r;
+}
+
+// What the keys add to a driving control's value (0 if none is held).
+float key_value(void* input, int context, int control) {
+    if (!driving(input, context, control)) return 0;
+    float v = 0;
+    for (int i = 0; i < kActionCount; ++i)
+        if (kActions[i].control == control && g_held[i].load()) v += kActions[i].sign;
+    return v;
+}
+
+float with_keys(float v, void* input, int context, int control) {
+    const float k = key_value(input, context, control);
+    return k ? std::max(-1.f, std::min(1.f, v + k)) : v;
+}
+
+// A key's press, to each place in the game's code that asks within a moment of it, once.
+bool key_pressed(void* input, int context, int control, const void* from) {
+    if (!driving(input, context, control)) return false;
+    std::lock_guard<std::mutex> lock(g_edge_mx);
+    Edge& e = g_edges[control];
+    if (!e.id || GetTickCount() - e.at > 250) return false;
+    for (int i = 0; i < 8; ++i) {
+        if (e.from[i] && e.from[i] != from) continue;
+        e.from[i] = from;
+        if (e.told[i] == e.id) return false;
+        e.told[i] = e.id;
+        return true;
+    }
+    return false;
+}
+
 // ---- the help bar ---------------------------------------------------------------------------------
 // "(A) Select (B) Back ...": ControllerButtonControls, each naming a pad button. A click on one is
 // that button's key, as the pad would send it.
@@ -711,6 +1059,7 @@ std::atomic<bool> g_press_held{false};
 std::atomic<bool> g_press_told{false}, g_release_told{false};
 
 bool was_pressed(void* input, int context, int control, uint8_t a) {
+    g_player = static_cast<uint8_t*>(input);
     if (o_was_pressed(input, context, control, a)) {
         if (g_cfg.debug) {
             static int last_ctx = -1, last_ctl = -1;
@@ -722,6 +1071,7 @@ bool was_pressed(void* input, int context, int control, uint8_t a) {
         }
         return true;
     }
+    if (key_pressed(input, context, control, __builtin_return_address(0))) return true;
     if (context != 7) return false;
     // Like a real press: "pressed" to the first asker once, "released" once (later).
     const int phase = g_press_phase.load();
@@ -1729,16 +2079,15 @@ int dbg_state(void* input, int context, int control, uint8_t a) {
     if (v) log_analog("state", context, control, static_cast<float>(v), __builtin_return_address(0));
     return v;
 }
-using GetDigitalFn = float (*)(void* input, int context, int control);
-GetDigitalFn o_dbg_digital = nullptr;
-float dbg_digital(void* input, int context, int control) {
-    const float v = o_dbg_digital(input, context, control);
-    if (v != 0.f) log_analog("digital", context, control, v, __builtin_return_address(0));
-    return v;
+// The pad's buttons as 0..1 (the triggers, the handbrake): the keyboard's driving keys go in here.
+float get_digital(void* input, int context, int control) {
+    const float v = o_get_digital(input, context, control);
+    if (v != 0.f && g_cfg.debug) log_analog("digital", context, control, v, __builtin_return_address(0));
+    return with_keys(v, input, context, control);
 }
 
 float get_analog(void* input, int context, int control) {
-    const float v = o_get_analog(input, context, control);
+    const float v = with_keys(o_get_analog(input, context, control), input, context, control);
     if (v != 0.f && g_cfg.debug && !(context == 7 && (control == kDecalX || control == kDecalY)))
         log_analog("analog", context, control, v, __builtin_return_address(0));
     if (context == 7 && (control == kCamX || control == kCamY)) {
@@ -1757,8 +2106,111 @@ void photo_frame() {
     g_decal_keys = front && !std::strcmp(focus_name(), ".?AVLiveryLayerPosition@@");
 }
 
+// Once a UI frame, with the game window in front: which keys are held, and what was pressed.
+// The menu's keys press the pad's buttons; the arrows repeat while held, as the d-pad does.
+// "Controller disconnected": when the profile's user has no pad (the one it played with went),
+// the game shows its ControllerPairing page through ShowPairing(manager, show, ...) (0xB620C0,
+// from 0x21D26F and 0x228BD4 / 0x228C65), and only a pad's A paired to the profile takes it away.
+// With the keys on and no pad there, the keyboard plays on instead: the page isn't shown. Once
+// a pad is plugged in it is, so that pad's A pairs it to the profile again.
+constexpr uintptr_t RVA_SHOW_PAIRING = 0xB620C0;
+constexpr uintptr_t RVA_INPUTS       = 0x365D7C8;   // the players' inputs, 0x1300 apart from +0x10
+constexpr uintptr_t INPUTS_DEVICE    = 0x70;        // in each: its pad, or null
+
+bool any_pad() {
+    uint8_t* inputs = at<uint8_t*>(g_base, RVA_INPUTS);
+    if (!inputs) return false;
+    for (int i = 0; i < 8; ++i)
+        if (at<void*>(inputs, i * 0x1300 + INPUTS_DEVICE)) return true;
+    return false;
+}
+using ShowPairingFn = void (*)(void* manager, uint8_t show, uint8_t flag);
+ShowPairingFn o_show_pairing = nullptr;
+
+// The game loses its input then too: each frame it gives the UserInterface the input of the
+// user's pad (SetInput, vtable slot at 0x2ECFC68, 0x14237E0: its +0x88), null without one, and
+// with none the menus take nothing and the game pauses itself again as soon as it's resumed.
+// With the keys on, the UI keeps the input it had (the player's, in the game's own array of
+// them), which the keys feed.
+constexpr uintptr_t RVA_UI_SET_INPUT_SLOT = 0x2ECFC68;
+constexpr uintptr_t RVA_UI_SET_INPUT      = 0x14237E0;
+using SetInputFn = void (*)(void* ui, void* input);
+SetInputFn o_ui_set_input = nullptr;
+
+void ui_set_input(void* ui, void* input) {
+    static void* last = nullptr;
+    if (input) last = input;
+    else if (g_keyboard) input = last;
+    o_ui_set_input(ui, input);
+}
+
+// And the HUD pauses the game while the user's pad isn't connected: each frame (0x964810) it
+// checks the user's input's "connected" (+4) and, without it, calls Post(hud, its pause event)
+// at 0x9648FA. Signed in without a pad, that input isn't the one the keys feed (and keep
+// connected), so with the keys on and no pad there the call is skipped.
+constexpr uintptr_t RVA_PAD_LOST_PAUSE = 0x9648FA;   // the call
+using PostFn = uintptr_t (*)(void* self, void* event);
+PostFn o_pad_lost_pause = nullptr;
+
+uintptr_t pad_lost_pause(void* self, void* event) {
+    return g_keyboard && !any_pad() ? 0 : o_pad_lost_pause(self, event);
+}
+
+void show_pairing(void* manager, uint8_t show, uint8_t flag) {
+    if (show && g_keyboard && !any_pad()) {
+        static DWORD told = 0;
+        if (GetTickCount() - told > 10000) logf("controller disconnected: playing on with the keyboard"), told = GetTickCount();
+        return;
+    }
+    o_show_pairing(manager, show, flag);
+}
+
+void keyboard_frame() {
+    if (!g_keyboard) return;
+    HWND h           = g_hwnd.load();
+    const bool front = h && GetForegroundWindow() == h;
+    const bool menu  = in_menu();
+    g_in_menu        = menu;
+    static float repeat[kActionCount] = {};   // seconds to the next repeat
+    static bool down[kActionCount]    = {};   // its key is down, wherever we are
+    for (int i = 0; i < kActionCount; ++i) {
+        const Action& a = kActions[i];
+        bool now        = false;
+        if (front)
+            for (int vk : g_action_keys[i]) now = now || (vk && (GetAsyncKeyState(vk) & 0x8000));
+        // A press counts where it's made: Esc that closes the map doesn't pause the drive it
+        // leads back to, though a key held into the drive (W) does drive.
+        // A key that holds a pad button holds it only from a press made here, until it's let go
+        // or we're elsewhere: else held Esc (to quit Azimuth) pauses, the menu takes Start away,
+        // the drive gives it back, and the pause menu opens and closes over and over.
+        const bool pressed = now && !down[i];
+        down[i]            = now;
+        const bool here    = a.menu == menu;
+        static bool armed[kActionCount] = {};
+        armed[i]  = now && here && (armed[i] || pressed);
+        g_held[i] = now && here && (!a.pad || armed[i]);
+        if (!here || !now) continue;
+        if (pressed) {
+            if (g_cfg.debug) logf("key %s", a.name);
+            if (a.control >= 0) key_press(a.control);
+        }
+        if (!a.key || (a.pad && o_input_update && g_player.load())) continue;   // held by input_update
+        // Without that, the pad's presses, as clicks make them, repeating while held as the d-pad
+        // does (slower than a press takes, so it can be the pad's again).
+        const bool arrow = a.key == KEY_UP || a.key == KEY_DOWN || a.key == KEY_LEFT || a.key == KEY_RIGHT;
+        if (pressed) {
+            repeat[i] = 0.4f;
+            if (!press_pad(a.key)) tap(a.key);
+        } else if (arrow && (repeat[i] -= g_ui_dt) <= 0) {
+            repeat[i] = 0.15f;
+            if (!press_pad(a.key)) tap(a.key);
+        }
+    }
+}
+
 void map_frame_guarded() {
     __try {
+        keyboard_frame();
         photo_frame();
         debug_frame();
         map_frame();
@@ -1822,6 +2274,82 @@ bool code_matches() {
     return true;
 }
 
+// ---- FnFNitro ----------------------------------------------------------------------------------
+// FnFNitro (fh2-mods\FnFNitro.dll) boosts while the pad's nitro button is down: its NitroButton
+// (LB unless its ini says otherwise), read with XInputGetState on ports 0 to 3. With it there,
+// FH2Mouse answers its XInputGetState (its import, nobody else's): while the Nitro key is held,
+// port 0 has that button down, with or without a pad. The game never sees it.
+using XInputGetStateFn = DWORD(WINAPI*)(DWORD port, XINPUT_STATE* state);
+XInputGetStateFn o_nitro_xinput = nullptr;
+int g_nitro_action = -1;
+
+// FnFNitro's NitroButton, as a pad button's bit (0x10000 / 0x20000: LT / RT); read again each second.
+DWORD nitro_button() {
+    static DWORD bit = XINPUT_GAMEPAD_LEFT_SHOULDER, read = 0;
+    if (read && GetTickCount() - read < 1000) return bit;
+    read = GetTickCount();
+    static const struct { const wchar_t* name; DWORD bit; } names[] = {
+        {L"LB", XINPUT_GAMEPAD_LEFT_SHOULDER}, {L"RB", XINPUT_GAMEPAD_RIGHT_SHOULDER}, {L"A", XINPUT_GAMEPAD_A},
+        {L"B", XINPUT_GAMEPAD_B}, {L"X", XINPUT_GAMEPAD_X}, {L"Y", XINPUT_GAMEPAD_Y}, {L"LS", XINPUT_GAMEPAD_LEFT_THUMB},
+        {L"RS", XINPUT_GAMEPAD_RIGHT_THUMB}, {L"DPadUp", XINPUT_GAMEPAD_DPAD_UP}, {L"DPadDown", XINPUT_GAMEPAD_DPAD_DOWN},
+        {L"DPadLeft", XINPUT_GAMEPAD_DPAD_LEFT}, {L"DPadRight", XINPUT_GAMEPAD_DPAD_RIGHT}, {L"Back", XINPUT_GAMEPAD_BACK},
+        {L"Start", XINPUT_GAMEPAD_START}, {L"LT", 0x10000}, {L"RT", 0x20000},
+    };
+    wchar_t name[32] = {};
+    GetPrivateProfileStringW(L"Settings", L"NitroButton", L"LB", name, 32,
+                             (std::wstring(g_api->azimuth_dir) + L"\\fh2-mods\\FnFNitro.ini").c_str());
+    bit = XINPUT_GAMEPAD_LEFT_SHOULDER;   // as FnFNitro: unknown names are LB
+    for (const auto& n : names)
+        if (!_wcsicmp(name, n.name)) bit = n.bit;
+    return bit;
+}
+
+DWORD WINAPI nitro_xinput(DWORD port, XINPUT_STATE* state) {
+    DWORD r = o_nitro_xinput(port, state);
+    if (port != 0 || !state || !g_keyboard || g_nitro_action < 0 || !g_held[g_nitro_action].load()) return r;
+    if (r != ERROR_SUCCESS) std::memset(state, 0, sizeof *state), r = ERROR_SUCCESS;
+    const DWORD bit = nitro_button();
+    if (bit == 0x10000) state->Gamepad.bLeftTrigger = 255;
+    else if (bit == 0x20000) state->Gamepad.bRightTrigger = 255;
+    else state->Gamepad.wButtons |= static_cast<WORD>(bit);
+    return r;
+}
+
+// FnFNitro's import of XInputGetState (by name, or xinput1_4's ordinal 2), or null.
+void** nitro_xinput_slot(HMODULE m) {
+    auto* base = reinterpret_cast<uint8_t*>(m);
+    auto* dos  = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
+    auto* nt   = reinterpret_cast<IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
+    const IMAGE_DATA_DIRECTORY& dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+    if (!dir.VirtualAddress) return nullptr;
+    for (auto* d = reinterpret_cast<IMAGE_IMPORT_DESCRIPTOR*>(base + dir.VirtualAddress); d->Name; ++d) {
+        if (_strnicmp(reinterpret_cast<char*>(base + d->Name), "xinput", 6)) continue;
+        auto* names = reinterpret_cast<IMAGE_THUNK_DATA64*>(base + (d->OriginalFirstThunk ? d->OriginalFirstThunk : d->FirstThunk));
+        auto* slots = reinterpret_cast<IMAGE_THUNK_DATA64*>(base + d->FirstThunk);
+        for (; names->u1.AddressOfData; ++names, ++slots) {
+            const bool by_ordinal = IMAGE_SNAP_BY_ORDINAL64(names->u1.Ordinal);
+            if ((by_ordinal && IMAGE_ORDINAL64(names->u1.Ordinal) == 2) ||
+                (!by_ordinal && !std::strcmp(reinterpret_cast<IMAGE_IMPORT_BY_NAME*>(base + names->u1.AddressOfData)->Name,
+                                             "XInputGetState")))
+                return reinterpret_cast<void**>(&slots->u1.Function);
+        }
+    }
+    return nullptr;
+}
+
+void hook_nitro() {
+    for (int i = 0; i < kActionCount; ++i)
+        if (!std::strcmp(kActions[i].name, "Nitro")) g_nitro_action = i;
+    HMODULE m = GetModuleHandleW(L"FnFNitro.dll");
+    if (!m || !g_keyboard) return;
+    void** slot = nitro_xinput_slot(m);
+    if (slot && g_api->hook_pointer(g_mod, "FnFNitro: XInputGetState", slot, reinterpret_cast<void*>(&nitro_xinput),
+                                    reinterpret_cast<void**>(&o_nitro_xinput)))
+        g_api->enable_hooks(g_mod, nullptr), logf("FnFNitro is here: the Nitro key boosts");
+    else
+        logf("FnFNitro is here, but its pad reading isn't as expected: no Nitro key");
+}
+
 DWORD WINAPI start(LPVOID) {
     g_base = static_cast<uint8_t*>(g_api->wait_for_code(0xFFFFFFFFu));
     if (!g_base || !code_matches()) return 0;
@@ -1848,11 +2376,65 @@ DWORD WINAPI start(LPVOID) {
         g_api->enable_hooks(g_mod, nullptr);
     else
         o_get_analog = nullptr, logf("the analog input isn't as expected: no W A S D for decals");
+    // The keyboard's driving keys: GetAnalog (above), GetDigital and WasPressed, in context 0.
+    static const uint8_t digital_bytes[] = {0x40, 0x53, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x83, 0xEC, 0x58};
+    static const uint8_t active_bytes[]  = {0x40, 0x53, 0x48, 0x83, 0xEC, 0x40, 0x48, 0x83, 0x79, 0x58, 0x00, 0x8B};
+    if (!std::memcmp(g_base + RVA_CONTEXT_ACTIVE, active_bytes, sizeof active_bytes) && o_get_analog && o_was_pressed &&
+        !std::memcmp(g_base + RVA_GET_DIGITAL, digital_bytes, sizeof digital_bytes) &&
+        g_api->hook_function(g_mod, "input GetDigital", g_base + RVA_GET_DIGITAL, reinterpret_cast<void*>(&get_digital),
+                             reinterpret_cast<void**>(&o_get_digital)))
+        g_api->enable_hooks(g_mod, nullptr);
+    else
+        o_get_digital = nullptr, logf("the game's input isn't as expected: no keys for driving");
+    // Signing in without a pad: pressing A on the title screen signs in the user of the pad that
+    // pressed it (0xE7EBC0) and, with no pad, gives up ("Sign in needed") instead of asking the
+    // account picker (0xD08BD0, which takes no pad, as the pairing page's use of it shows, and
+    // under Azimuth answers with the signed-in player). With the keys on, it asks: the jump that
+    // gives up (je at 0xE7ECC4, after test bl, bl: "there's a pad") goes.
+    if (g_keyboard && g_api->api_version >= 7) {
+        static const uint8_t give_up[] = {0x0F, 0x84, 0x9B, 0x01, 0x00, 0x00};
+        static const uint8_t ask[]     = {0x66, 0x0F, 0x1F, 0x44, 0x00, 0x00};   // nop
+        if (FH2Hook* p = g_api->patch_bytes(g_mod, "sign in without a pad", g_base + 0xE7ECC4, give_up, ask, sizeof ask))
+            g_api->enable_hooks(g_mod, p);
+        else
+            logf("signing in isn't as expected: without a pad, sign in needs one");
+    }
+    // No "Controller disconnected" while the keyboard plays: optional.
+    static const uint8_t pairing_bytes[] = {0x48, 0x8B, 0xC4, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x8D, 0x68, 0xC8};
+    if (!std::memcmp(g_base + RVA_SHOW_PAIRING, pairing_bytes, sizeof pairing_bytes) &&
+        g_api->hook_function(g_mod, "show controller pairing", g_base + RVA_SHOW_PAIRING, reinterpret_cast<void*>(&show_pairing),
+                             reinterpret_cast<void**>(&o_show_pairing)))
+        g_api->enable_hooks(g_mod, nullptr);
+    else
+        o_show_pairing = nullptr, logf("the controller pairing page isn't as expected: it shows when a pad goes");
+    // The bytes before the call: cmp byte [rbx+4], 0 / jne / lea rdx, [rdi+0x28] / mov rcx, rdi.
+    static const uint8_t pause_bytes[] = {0x80, 0x7B, 0x04, 0x00, 0x75, 0x0C, 0x48, 0x8D, 0x57, 0x28, 0x48, 0x8B, 0xCF, 0xE8};
+    if (o_show_pairing && !std::memcmp(g_base + RVA_PAD_LOST_PAUSE - 13, pause_bytes, sizeof pause_bytes) &&
+        g_api->hook_call(g_mod, "HUD: pause while the pad is gone", g_base + RVA_PAD_LOST_PAUSE, reinterpret_cast<void*>(&pad_lost_pause),
+                         reinterpret_cast<void**>(&o_pad_lost_pause)))
+        g_api->enable_hooks(g_mod, nullptr);
+    else
+        logf("the HUD's pause isn't as expected: without a pad, the game may pause again when resumed");
+    static const uint8_t set_input_bytes[] = {0x48, 0x89, 0x91, 0x88, 0x00, 0x00, 0x00, 0xC3};
+    void** set_input_slot = reinterpret_cast<void**>(g_base + RVA_UI_SET_INPUT_SLOT);
+    if (o_show_pairing && *set_input_slot == g_base + RVA_UI_SET_INPUT &&
+        !std::memcmp(g_base + RVA_UI_SET_INPUT, set_input_bytes, sizeof set_input_bytes) &&
+        g_api->hook_pointer(g_mod, "UserInterface::SetInput", set_input_slot, reinterpret_cast<void*>(&ui_set_input),
+                            reinterpret_cast<void**>(&o_ui_set_input)))
+        g_api->enable_hooks(g_mod, nullptr);
+    else
+        logf("the UI's input isn't as expected: when a pad goes, the game waits for one");
+    // The keys that hold the pad's own buttons (the radio): optional.
+    static const uint8_t update_bytes[] = {0x48, 0x8B, 0xC4, 0x48, 0x89, 0x48, 0x08, 0x55, 0x56, 0x57, 0x41, 0x54};
+    if (o_get_digital && !std::memcmp(g_base + RVA_INPUT_UPDATE, update_bytes, sizeof update_bytes) &&
+        g_api->hook_function(g_mod, "input update", g_base + RVA_INPUT_UPDATE, reinterpret_cast<void*>(&input_update),
+                             reinterpret_cast<void**>(&o_input_update)))
+        g_api->enable_hooks(g_mod, nullptr);
+    else
+        logf("the game's input update isn't as expected: no keys for the radio");
     if (g_cfg.debug) {   // which game code asks about which button (for finding new ones)
         if (g_api->hook_function(g_mod, "input ButtonState (debug)", g_base + 0x106E690, reinterpret_cast<void*>(&dbg_state),
-                                 reinterpret_cast<void**>(&o_dbg_state)) &&
-            g_api->hook_function(g_mod, "input GetDigital (debug)", g_base + 0x106E3E0, reinterpret_cast<void*>(&dbg_digital),
-                                 reinterpret_cast<void**>(&o_dbg_digital)))
+                                 reinterpret_cast<void**>(&o_dbg_state)))
             g_api->enable_hooks(g_mod, nullptr);
     }
     // The garage camera's wheel zoom: optional.
@@ -1872,6 +2454,7 @@ DWORD WINAPI start(LPVOID) {
         g_api->enable_hooks(g_mod, nullptr);
     else
         logf("photo mode's camera isn't as expected: no mouse there");
+    hook_nitro();
     g_arrow = LoadCursorW(nullptr, IDC_ARROW);
     if (HANDLE t = CreateThread(nullptr, 0, window_thread, nullptr, 0, nullptr)) CloseHandle(t);
     if (HANDLE t = CreateThread(nullptr, 0, hook_thread, nullptr, 0, nullptr)) CloseHandle(t);
@@ -1888,11 +2471,12 @@ FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
                        reinterpret_cast<LPCWSTR>(&fh2mod_init), &g_self);
     FH2ModInfo info{};
     info.size             = sizeof info;
-    info.name             = "FH2Mouse";
+    info.name             = "FH2 Mouse & Keyboard";
     info.version          = FH2MOUSE_VERSION;
     info.github_repo      = "qiangqiang101/FH2Mouse";
     info.platform_version = FH2MOD_PLATFORM_VERSION;
     info.check_updates    = 1;
+    info.description      = "Drive with the keyboard, point at things in the menus and click them, drag the map, turn the garage camera, place decals with the keyboard, and fly the photo mode camera, all without picking up a controller.";
     g_mod                 = api->register_mod(&info);
     if (!g_mod) return 1;
     load_settings();
@@ -1900,6 +2484,7 @@ FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
         api->log(g_mod, "off (FH2Mouse\\FH2Mouse.ini, Enabled=0)");
         return 0;
     }
+    add_keyboard_rows();
     if (HANDLE t = CreateThread(nullptr, 0, start, nullptr, 0, nullptr)) CloseHandle(t);
     return 0;
 }
