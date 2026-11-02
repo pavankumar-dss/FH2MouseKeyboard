@@ -8,8 +8,10 @@
 //     wheel = d-pad up/down, back/forward side buttons = LB/RB.
 // Pages then behave exactly as they do with a controller.
 #include "fh2mod.h"
+#include "key_art.h"
 
 #include <windows.h>
+#include <wincodec.h>
 
 #include <algorithm>
 #include <array>
@@ -22,6 +24,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <cstring>
+#include <cwchar>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -107,6 +110,9 @@ constexpr int KEY_UP = 24, KEY_DOWN = 26;
 constexpr int KEY_LB = 19, KEY_RB = 20;   // PageUp, PageDown
 constexpr int KEY_X = 67, KEY_Y = 68;
 constexpr int KEY_RS_CLICK = 119;   // RightCtrl: what the pad's right stick click sends
+constexpr int KEY_LS_CLICK = 118;   // LeftCtrl: the left stick's
+constexpr int KEY_VIEW = 13;        // the View button's
+constexpr int KEY_LT = 116, KEY_RT = 117;   // the triggers' (the shifts)
 constexpr int KEY_LEFT = 23, KEY_RIGHT = 25;
 
 struct Expect {
@@ -152,6 +158,7 @@ UpdateFn o_update = nullptr;
 
 template <class F> F game(uintptr_t rva) { return reinterpret_cast<F>(g_base + rva); }
 template <class T> T at(const void* p, uintptr_t off) { return *reinterpret_cast<T const*>(static_cast<const uint8_t*>(p) + off); }
+template <class T> T& at_ref(void* p, uintptr_t off) { return *reinterpret_cast<T*>(static_cast<uint8_t*>(p) + off); }
 
 // ---- settings ----------------------------------------------------------------------------------
 
@@ -215,10 +222,23 @@ const Action kActions[] = {
     {"Right", "Menu: right", "Right", -1, 0, KEY_RIGHT, true, 0xC0000008ull},
     {"PreviousTab", "Menu: previous tab", "PageUp", -1, 0, KEY_LB, true, 0x100ull},
     {"NextTab", "Menu: next tab", "PageDown", -1, 0, KEY_RB, true, 0x200ull},
+    // X and Y, for what the help bar offers on them ("(Y) Stamp").
+    {"ButtonX", "Menu: X button", "X", -1, 0, KEY_X, true, 0x4000ull},
+    {"ButtonY", "Menu: Y button", "Y", -1, 0, KEY_Y, true, 0x8000ull},
+    // And the rest the help bar offers: View ("Setup manager", "Hide UI"), the triggers ("Select /
+    // Unselect Layer") and the stick clicks ("Advanced camera"). The triggers aren't buttons, so
+    // they're pressed, not held.
+    {"ButtonView", "Menu: View button", "Tab", -1, 0, KEY_VIEW, true, 0x20ull},
+    {"ButtonLT", "Menu: left trigger", "Z", -1, 0, KEY_LT, true},
+    {"ButtonRT", "Menu: right trigger", "C", -1, 0, KEY_RT, true},
+    {"ButtonLS", "Menu: left stick click", "F", -1, 0, KEY_LS_CLICK, true, 0x40ull},
+    {"ButtonRS", "Menu: right stick click", "V", -1, 0, KEY_RS_CLICK, true, 0x80ull},
 };
 constexpr int kActionCount = sizeof kActions / sizeof kActions[0];
 constexpr int kMaxKeys     = 4;
 bool g_keyboard            = true;
+bool g_key_icons_on        = true;   // the help bar shows the keys while they're used (see "Key icons")
+std::atomic<bool> g_icons_stale{false};   // the help bar on screen is to be shown again
 std::array<std::array<int, kMaxKeys>, kActionCount> g_action_keys{};   // virtual keys, 0 = none
 std::array<std::string, kActionCount> g_action_text;                   // as in the ini
 std::wstring g_ini;
@@ -287,8 +307,9 @@ void load_keys(const std::wstring& ini) {
                            "; Minus, Equals, Semicolon, Slash, Grave, LBracket, Backslash, RBracket, Quote, or a\r\n"
                            "; virtual-key code (0xNN). None leaves an action without a key. The driving keys only\r\n"
                            "; work while driving and the menu ones only in the menus, so a key can be one of each.\r\n"
-                           "; Enabled=0 turns the keys off.\r\n"
-                           "[Keyboard]\r\nEnabled=1\r\n";
+                           "; Enabled=0 turns the keys off. KeyIcons=1: while you play with the keyboard, the\r\n"
+                           "; help bar shows the keys instead of the controller's buttons.\r\n"
+                           "[Keyboard]\r\nEnabled=1\r\nKeyIcons=1\r\n";
         for (const Action& a : kActions) text += std::string(a.name) + "=" + a.keys + "\r\n";
         if (HANDLE f = CreateFileW(ini.c_str(), FILE_APPEND_DATA, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
             f != INVALID_HANDLE_VALUE) {
@@ -297,7 +318,8 @@ void load_keys(const std::wstring& ini) {
             CloseHandle(f);
         }
     }
-    g_keyboard = GetPrivateProfileIntW(L"Keyboard", L"Enabled", 1, ini.c_str()) != 0;
+    g_keyboard     = GetPrivateProfileIntW(L"Keyboard", L"Enabled", 1, ini.c_str()) != 0;
+    g_key_icons_on = GetPrivateProfileIntW(L"Keyboard", L"KeyIcons", 1, ini.c_str()) != 0;
     for (int i = 0; i < kActionCount; ++i) {
         wchar_t buf[128] = {};
         GetPrivateProfileStringW(L"Keyboard", widen(kActions[i].name).c_str(), widen(kActions[i].keys).c_str(), buf, 128,
@@ -318,9 +340,15 @@ const char* const kKeyChoices[] = {
 std::array<std::vector<std::string>, kActionCount> g_row_choices;   // what each row offers
 
 void keyboard_row_changed(void*, const char* key, int value) {
+    g_icons_stale = true;
     if (!std::strcmp(key, "Keyboard")) {
         g_keyboard = value != 0;
         WritePrivateProfileStringW(L"Keyboard", L"Enabled", value ? L"1" : L"0", g_ini.c_str());
+        return;
+    }
+    if (!std::strcmp(key, "KeyIcons")) {
+        g_key_icons_on = value != 0;
+        WritePrivateProfileStringW(L"Keyboard", L"KeyIcons", value ? L"1" : L"0", g_ini.c_str());
         return;
     }
     for (int i = 0; i < kActionCount; ++i) {
@@ -343,6 +371,14 @@ void add_keyboard_rows() {
     on.value       = g_keyboard;
     on.on_change   = keyboard_row_changed;
     g_api->add_setting(g_mod, &on);
+    FH2Setting icons{};
+    icons.size        = sizeof icons;
+    icons.key         = "KeyIcons";
+    icons.label       = "Keyboard icons";
+    icons.description = "While you play with the keyboard, the help bar shows its keys instead of the controller's buttons. A button on the controller brings the buttons back.";
+    icons.value       = g_key_icons_on;
+    icons.on_change   = keyboard_row_changed;
+    g_api->add_setting(g_mod, &icons);
     static std::string keys[kActionCount], labels[kActionCount];
     const bool nitro = GetFileAttributesW((std::wstring(g_api->azimuth_dir) + L"\\fh2-mods\\FnFNitro.dll").c_str()) !=
                        INVALID_FILE_ATTRIBUTES;
@@ -1116,13 +1152,19 @@ bool press_pad(int key, bool hold = false) {
     return false;
 }
 
-int help_button_key(uint8_t* el) {
+// Its ControllerButtonType, or -1.
+int help_button_type(uint8_t* el) {
     void* dp = at<void*>(g_base, RVA_HELP_BUTTON_DP);
-    if (!dp) return 0;
+    if (!dp) return -1;
     uint8_t* boxed = nullptr;
     game<DpGetValueFn>(RVA_DP_GET_VALUE)(el, &boxed, dp);
     const int type = boxed && boxed != game<UnsetFn>(RVA_UNSET_VALUE)() ? at<int>(boxed, 0x28) : -1;
     release(boxed);
+    return type;
+}
+
+int help_button_key(uint8_t* el) {
+    const int type = help_button_type(el);
     // ControllerButtonType, in the help bar template's order, to the key the pump sends for it.
     // Start/View/triggers/sticks: Pause, Escape, the shifts and the controls, by the table's order.
     static const int keys[] = {
@@ -1130,9 +1172,10 @@ int help_button_key(uint8_t* el) {
         7, 13,                        // Start (Menu), Back (View)
         KEY_LB, KEY_RB,               // bumpers
         116, 117,                     // triggers
+        KEY_LS_CLICK, KEY_RS_CLICK,   // stick clicks (L3, R3)
         0, 0,                         // d-pad left/right, up/down (both ways: nothing to press)
         KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT,
-        118, 0, 119, 119,             // left stick, left stick left/right, right stick, R3
+        118, 0, 119, 119,             // left stick, left stick left/right, right stick, ... (0xB61C20's table)
     };
     const int key = type >= 0 && type < static_cast<int>(sizeof keys / sizeof keys[0]) ? keys[type] : 0;
     if (g_cfg.debug) logf("help bar button %d: key %d", type, key);
@@ -1148,6 +1191,731 @@ bool help_click(uint8_t* ctl) {
         }
     }
     return true;
+}
+
+// ---- key icons -----------------------------------------------------------------------------------
+// While the keyboard (or the mouse) was used last, the pad's buttons in the help bar and the HUD's
+// prompts show the keys that press them instead: "(Enter) Select", "(Esc) Back". A button on the
+// pad brings the pad's back.
+//
+// A ControllerButtonControl shows its button with 0xB61C20(control, ControllerButtonType): from a
+// table of names (built at 0x34E5920) it looks up the resource "A_BitmapImage_ControllerButton_A"
+// with FindResource(element, String* name) (0x164F840, a borrowed reference or null), and sets it
+// as the ImageSource of its icon (+0x1D8) and the icon's shadow (+0x1E0). An ActivateButtonControl
+// (the HUD's "(X) Enter Garage", an event's "(X) Start", notifications) does the same in
+// 0xB6A560(control), for the button the game's activate control is on (X, or View with a manual
+// gearbox), with a size after the name ("_Large"): it's always the Interact key's, wherever the
+// focus is. Those three FindResource calls are hooked: for a button a key presses, they get a
+// BitmapImage of ours instead, of a texture made here (FH2MouseKeys\<key>.swatchbin, written
+// through the platform when the mod loads). Which key presses a help bar's button depends on
+// where it is: X is ButtonX in the menus and Interact while driving.
+//
+// The images are made as XAML makes them from a path: AVUI's BitmapImageTypeConverter
+// (vtable 0x2D5F628, +8 ConvertFrom(this, Ptr* out, context, value), which uses no state of its
+// own) given an AVUI String (0x1663220 builds one: 0x40 bytes, its UTF-16 text at +0x28 and
+// length at +0x30). Pictures that pages name in their XAML themselves keep the pad's buttons.
+//
+// The textures are uncompressed, as the game's own 32 x 32 buttons (format 0xAD): BGRA with the
+// colour premultiplied, in 8 x 8 tiles in rows, the pixels in each in Morton order (x in the even
+// bits of the index, y in the odd ones), after a 0x53-byte header. The keys are Forza Horizon 6's
+// keyboard art (key_art.h, made by tools/make_key_art.py), the key's name written on with GDI.
+constexpr uintptr_t RVA_FIND_RESOURCE   = 0x164F840;
+constexpr uintptr_t RVA_ICON_UPDATE     = 0xB61C20;
+constexpr uintptr_t RVA_ACTIVATE_UPDATE = 0xB6A560;
+constexpr uintptr_t RVA_ICON_FINDS[]    = {0xB61FFE, 0xB62055};   // the help bar's calls to FindResource
+constexpr uintptr_t RVA_ACTIVATE_FIND   = 0xB6B054;               // the activate button's
+constexpr uintptr_t ACTIVATE_SHOWN      = 0x1F8;   // ActivateButtonControl: the control it shows (same: nothing to do)
+constexpr uintptr_t RVA_BITMAP_CONVERTER = 0x2D5F628;   // BitmapImageTypeConverter's vtable
+constexpr uintptr_t RVA_CAN_CONVERT      = 0x1532C00;   // ... +0: CanConvertFrom (a String)
+constexpr uintptr_t RVA_CONVERT_FROM     = 0x15999F0;   // ... +8: ConvertFrom
+constexpr uintptr_t RVA_AVUI_STRING      = 0x1663220;   // String* (String* out, const char*, int length or -1)
+using FindResourceFn = uint8_t* (*)(void* element, uint8_t* name);
+using IconUpdateFn   = void (*)(void* control, int type);
+using ActivateUpdateFn = void (*)(void* control);
+using ConvertFromFn  = void** (*)(void* self, uint8_t** out, void* context, void* value);
+using AvuiStringFn   = void* (*)(void* out, const char* text, int length);
+FindResourceFn o_find_resource = nullptr;
+bool g_icons_hooked = false;
+
+std::atomic<bool> g_keys_last{false};  // the keyboard or the mouse was used last, not a pad
+std::vector<std::string> g_key_files;  // the textures written, by name (Key_0D...)
+int g_custom_keys = 0;                 // how many of them are pictures from FH2Mouse\KeyIcons
+
+bool keys_shown() { return g_icons_hooked && g_key_icons_on && g_keyboard && g_keys_last.load(); }
+
+constexpr int kKeySize = 128, kKeySmall = 32;
+
+// A key's name, as written on it ("" for an arrow, which has its picture).
+std::wstring key_label(int vk) {
+    static const struct { int vk; const wchar_t* text; } names[] = {
+        {VK_RETURN, L"Enter"}, {VK_ESCAPE, L"Esc"}, {VK_PRIOR, L"PgUp"}, {VK_NEXT, L"PgDn"}, {VK_SPACE, L"Space"},
+        {VK_TAB, L"Tab"}, {VK_BACK, L"Bksp"}, {VK_INSERT, L"Ins"}, {VK_DELETE, L"Del"}, {VK_HOME, L"Home"},
+        {VK_END, L"End"}, {VK_SHIFT, L"Shift"}, {VK_LSHIFT, L"Shift"}, {VK_RSHIFT, L"Shift"}, {VK_CONTROL, L"Ctrl"},
+        {VK_LCONTROL, L"Ctrl"}, {VK_RCONTROL, L"Ctrl"}, {VK_MENU, L"Alt"}, {VK_LMENU, L"Alt"}, {VK_RMENU, L"Alt"},
+        {VK_OEM_COMMA, L","}, {VK_OEM_PERIOD, L"."}, {VK_OEM_MINUS, L"-"}, {VK_OEM_PLUS, L"="}, {VK_OEM_1, L";"},
+        {VK_OEM_2, L"/"}, {VK_OEM_3, L"`"}, {VK_OEM_4, L"["}, {VK_OEM_5, L"\\"}, {VK_OEM_6, L"]"}, {VK_OEM_7, L"'"},
+        {VK_UP, L""}, {VK_DOWN, L""}, {VK_LEFT, L""}, {VK_RIGHT, L""},
+    };
+    for (const auto& n : names)
+        if (n.vk == vk) return n.text;
+    if ((vk >= 'A' && vk <= 'Z') || (vk >= '0' && vk <= '9')) return std::wstring(1, static_cast<wchar_t>(vk));
+    if (vk >= VK_F1 && vk <= VK_F24) return L"F" + std::to_wstring(vk - VK_F1 + 1);
+    if (vk >= VK_NUMPAD0 && vk <= VK_NUMPAD9) return L"Num" + std::to_wstring(vk - VK_NUMPAD0);
+    wchar_t name[32] = {};
+    if (GetKeyNameTextW(static_cast<LONG>(MapVirtualKeyW(vk, MAPVK_VK_TO_VSC) << 16), name, 32) > 0) return name;
+    return L"?";
+}
+
+int arrow_of(int vk) {
+    switch (vk) {
+        case VK_UP: return 0;
+        case VK_DOWN: return 1;
+        case VK_LEFT: return 2;
+        case VK_RIGHT: return 3;
+        default: return -1;
+    }
+}
+
+// Adds a piece of art to `cov` (128 x 128), scaled about the key's middle and moved by dx, dy.
+void draw_art(const KeyArt& a, uint8_t* cov, float scale, float dx, float dy) {
+    for (int y = 0; y < kKeySize; ++y)
+        for (int x = 0; x < kKeySize; ++x) {
+            const float sx = (x + 0.5f - 64 - dx) / scale + 64 - 0.5f - a.x;
+            const float sy = (y + 0.5f - 64 - dy) / scale + 64 - 0.5f - a.y;
+            const int x0 = static_cast<int>(std::floor(sx)), y0 = static_cast<int>(std::floor(sy));
+            const float fx = sx - x0, fy = sy - y0;
+            auto px = [&](int u, int v) { return u < 0 || v < 0 || u >= a.w || v >= a.h ? 0.f : a.data[v * a.w + u]; };
+            const float v = (px(x0, y0) * (1 - fx) + px(x0 + 1, y0) * fx) * (1 - fy) +
+                            (px(x0, y0 + 1) * (1 - fx) + px(x0 + 1, y0 + 1) * fx) * fy;
+            uint8_t& c = cov[y * kKeySize + x];
+            c = static_cast<uint8_t>(std::max<float>(c, std::min(255.f, v + 0.5f)));
+        }
+}
+
+// Writes `text` onto `cov` (128 x 128) in bold, as large as fits, its ink in the middle.
+bool draw_label(const std::wstring& text, uint8_t* cov) {
+    HDC dc = CreateCompatibleDC(nullptr);
+    if (!dc) return false;
+    BITMAPINFO bi{};
+    bi.bmiHeader = {sizeof(BITMAPINFOHEADER), kKeySize, -kKeySize, 1, 32, BI_RGB, 0, 0, 0, 0, 0};
+    void* bits   = nullptr;
+    HBITMAP bmp  = CreateDIBSection(dc, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
+    if (!bmp) return DeleteDC(dc), false;
+    HGDIOBJ old_bmp = SelectObject(dc, bmp);
+    HFONT font      = nullptr;
+    SIZE size{};
+    for (int h = 72; h >= 24; h -= 2) {
+        if (font) DeleteObject(font);
+        font = CreateFontW(-h, 0, 0, 0, FW_BOLD, 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                           ANTIALIASED_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+        SelectObject(dc, font);
+        GetTextExtentPoint32W(dc, text.c_str(), static_cast<int>(text.size()), &size);
+        if (size.cx <= 100) break;
+    }
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, RGB(255, 255, 255));
+    TextOutW(dc, (kKeySize - size.cx) / 2, (kKeySize - size.cy) / 2, text.c_str(), static_cast<int>(text.size()));
+    GdiFlush();
+    const auto* px = static_cast<const uint8_t*>(bits);
+    int x0 = kKeySize, y0 = kKeySize, x1 = -1, y1 = -1;
+    for (int y = 0; y < kKeySize; ++y)
+        for (int x = 0; x < kKeySize; ++x)
+            if (px[(y * kKeySize + x) * 4 + 1]) x0 = std::min(x0, x), x1 = std::max(x1, x), y0 = std::min(y0, y), y1 = std::max(y1, y);
+    if (x1 >= 0) {
+        const int dx = (kKeySize - 1 - x1 - x0) / 2, dy = (kKeySize - 1 - y1 - y0) / 2;
+        for (int y = 0; y < kKeySize; ++y)
+            for (int x = 0; x < kKeySize; ++x) {
+                const int sx = x - dx, sy = y - dy;
+                if (sx >= 0 && sy >= 0 && sx < kKeySize && sy < kKeySize) cov[y * kKeySize + x] = px[(sy * kKeySize + sx) * 4 + 1];
+            }
+    }
+    SelectObject(dc, old_bmp);
+    DeleteObject(bmp);
+    if (font) DeleteObject(font);
+    DeleteDC(dc);
+    return x1 >= 0;
+}
+
+// A swatchbin of a w x h picture (BGRA, premultiplied; both multiples of 8), as the game's own
+// buttons. The game's own have 0x48 after the format when both sides are powers of two (its
+// buttons) and 0x40 otherwise (its logos).
+std::string swatchbin(int w, int h, const uint8_t* bgra) {
+    const uint32_t size = static_cast<uint32_t>(w * h * 4);
+    std::string f(0x53 + size, '\0');
+    auto put = [&](std::size_t at, uint32_t v, int n) { std::memcpy(&f[at], &v, n); };
+    std::memcpy(&f[0x00], "burG\x01\x00\x01\x00", 8);
+    put(0x08, 0x53, 4), put(0x0C, 0x53 + size, 4);
+    std::memcpy(&f[0x10], "BCXT\x02\x00\x01\x00", 8);
+    put(0x18, 0x28, 4), put(0x1C, 0x53, 4), put(0x20, size, 4), put(0x24, size, 4);
+    std::memcpy(&f[0x28], "HCXT\x30\x02\x08\x00", 8);
+    f[0x3F] = 1;
+    put(0x40, w, 2), put(0x42, h, 2), put(0x44, 1, 2), put(0x46, w, 2), put(0x48, h, 2), put(0x4A, 1, 2);
+    std::memcpy(&f[0x4C], "\x01\x01\x00\xAD\x01\x00\x48", 7);   // one level, format 0xAD
+    if ((w & (w - 1)) || (h & (h - 1))) f[0x52] = 0x40;
+    for (int i = 0; i < w * h; ++i) {
+        const int tile = i >> 6, j = i & 63;
+        const int x = (j & 1) | ((j >> 1) & 2) | ((j >> 2) & 4), y = ((j >> 1) & 1) | ((j >> 2) & 2) | ((j >> 3) & 4);
+        const int px = (tile % (w / 8)) * 8 + x, py = (tile / (w / 8)) * 8 + y;
+        std::memcpy(&f[0x53 + i * 4], bgra + (py * w + px) * 4, 4);
+    }
+    return f;
+}
+
+std::string key_file(int vk) {
+    char id[16];
+    std::snprintf(id, sizeof id, "Key_%02X", vk & 0xFF);
+    return id;
+}
+
+// The key's name in the ini ("Enter", "PageUp", "A"), for its picture in FH2Mouse\KeyIcons.
+std::string key_name(int vk) {
+    static const struct { int vk; const char* name; } names[] = {
+        {VK_RETURN, "Enter"}, {VK_ESCAPE, "Escape"}, {VK_PRIOR, "PageUp"}, {VK_NEXT, "PageDown"}, {VK_SPACE, "Space"},
+        {VK_TAB, "Tab"}, {VK_BACK, "Backspace"}, {VK_INSERT, "Insert"}, {VK_DELETE, "Delete"}, {VK_HOME, "Home"},
+        {VK_END, "End"}, {VK_SHIFT, "Shift"}, {VK_LSHIFT, "LShift"}, {VK_RSHIFT, "RShift"}, {VK_CONTROL, "Ctrl"},
+        {VK_LCONTROL, "LCtrl"}, {VK_RCONTROL, "RCtrl"}, {VK_MENU, "Alt"}, {VK_LMENU, "LAlt"}, {VK_RMENU, "RAlt"},
+        {VK_OEM_COMMA, "Comma"}, {VK_OEM_PERIOD, "Period"}, {VK_OEM_MINUS, "Minus"}, {VK_OEM_PLUS, "Equals"},
+        {VK_OEM_1, "Semicolon"}, {VK_OEM_2, "Slash"}, {VK_OEM_3, "Grave"}, {VK_OEM_4, "LBracket"}, {VK_OEM_5, "Backslash"},
+        {VK_OEM_6, "RBracket"}, {VK_OEM_7, "Quote"}, {VK_UP, "Up"}, {VK_DOWN, "Down"}, {VK_LEFT, "Left"}, {VK_RIGHT, "Right"},
+    };
+    for (const auto& n : names)
+        if (n.vk == vk) return n.name;
+    char name[16];
+    if ((vk >= 'A' && vk <= 'Z') || (vk >= '0' && vk <= '9')) std::snprintf(name, sizeof name, "%c", vk);
+    else if (vk >= VK_F1 && vk <= VK_F24) std::snprintf(name, sizeof name, "F%d", vk - VK_F1 + 1);
+    else if (vk >= VK_NUMPAD0 && vk <= VK_NUMPAD9) std::snprintf(name, sizeof name, "Num%d", vk - VK_NUMPAD0);
+    else std::snprintf(name, sizeof name, "0x%02X", vk & 0xFF);
+    return name;
+}
+
+// The pictures are PNGs, in the DLL (keyicons\<key>.png) and, to change one, in
+// FH2Mouse\KeyIcons\<key>.png. Windows' own codecs (WIC) read them.
+IWICImagingFactory* wic() {
+    static IWICImagingFactory* factory = [] {
+        CoInitializeEx(nullptr, COINIT_MULTITHREADED);   // or it's on already, either way
+        IWICImagingFactory* f = nullptr;
+        CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&f));
+        return f;
+    }();
+    return factory;
+}
+
+template <class T> struct Com {
+    T* p = nullptr;
+    ~Com() { if (p) p->Release(); }
+    T** operator&() { return &p; }
+    T* operator->() { return p; }
+};
+
+// A PNG (or any picture WIC reads), from a file or, with `size`, from memory, as BGRA,
+// premultiplied, 128 high and as wide as it is for that (`w`: 128 to 512, a multiple of 32, so a
+// quarter of it is the small picture's).
+bool load_picture(const void* source, std::size_t size, std::vector<uint8_t>& bgra, int& w) {
+    IWICImagingFactory* f = wic();
+    Com<IWICStream> stream;
+    Com<IWICBitmapDecoder> decoder;
+    Com<IWICBitmapFrameDecode> frame;
+    Com<IWICBitmapScaler> scaler;
+    Com<IWICFormatConverter> converter;
+    UINT pw = 0, ph = 0;
+    if (!f) return false;
+    const bool opened =
+        size ? SUCCEEDED(f->CreateStream(&stream)) &&
+                   SUCCEEDED(stream->InitializeFromMemory(static_cast<BYTE*>(const_cast<void*>(source)), static_cast<DWORD>(size))) &&
+                   SUCCEEDED(f->CreateDecoderFromStream(stream.p, nullptr, WICDecodeMetadataCacheOnDemand, &decoder))
+             : SUCCEEDED(f->CreateDecoderFromFilename(static_cast<const wchar_t*>(source), nullptr, GENERIC_READ,
+                                                      WICDecodeMetadataCacheOnDemand, &decoder));
+    if (!opened || FAILED(decoder->GetFrame(0, &frame)) || FAILED(frame->GetSize(&pw, &ph)) || !pw || !ph) return false;
+    const double aspect = std::max(1.0, std::min(4.0, static_cast<double>(pw) / ph));
+    w = static_cast<int>(std::lround(aspect * kKeySmall / 8)) * 8 * (kKeySize / kKeySmall);
+    bgra.assign(static_cast<std::size_t>(w) * kKeySize * 4, 0);
+    return SUCCEEDED(f->CreateBitmapScaler(&scaler)) &&
+           SUCCEEDED(scaler->Initialize(frame.p, w, kKeySize, WICBitmapInterpolationModeFant)) &&
+           SUCCEEDED(f->CreateFormatConverter(&converter)) &&
+           SUCCEEDED(converter->Initialize(scaler.p, GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0,
+                                           WICBitmapPaletteTypeCustom)) &&
+           SUCCEEDED(converter->CopyPixels(nullptr, w * 4, static_cast<UINT>(bgra.size()), bgra.data()));
+}
+
+// `src` (sw x sh BGRA, premultiplied) scaled to dw x dh, each pixel the average of what it covers.
+std::vector<uint8_t> shrink(const std::vector<uint8_t>& src, int sw, int sh, int dw, int dh) {
+    std::vector<uint8_t> out(static_cast<std::size_t>(dw) * dh * 4);
+    for (int y = 0; y < dh; ++y)
+        for (int x = 0; x < dw; ++x) {
+            const int x0 = x * sw / dw, x1 = std::max(x0 + 1, (x + 1) * sw / dw);
+            const int y0 = y * sh / dh, y1 = std::max(y0 + 1, (y + 1) * sh / dh);
+            for (int ch = 0; ch < 4; ++ch) {
+                int sum = 0;
+                for (int v = y0; v < y1; ++v)
+                    for (int u = x0; u < x1; ++u) sum += src[(static_cast<std::size_t>(v) * sw + u) * 4 + ch];
+                const int n = (x1 - x0) * (y1 - y0);
+                out[(static_cast<std::size_t>(y) * dw + x) * 4 + ch] = static_cast<uint8_t>((sum + n / 2) / n);
+            }
+        }
+    return out;
+}
+
+// The wide keys, by texture (Key_0D), and how many times as wide as high they are. For each,
+// <name>_Sq is the same picture in a square, for where the game has a square for it.
+std::vector<std::pair<std::string, float>> g_wide_keys;
+
+float key_aspect(const std::string& file) {
+    for (const auto& k : g_wide_keys)
+        if (k.first == file) return k.second;
+    return 1;
+}
+
+// A key picture built into the DLL (keyicons\<key>.png, src/keyicons.rc), or null.
+const void* builtin_picture(const std::string& key, std::size_t* size) {
+    HRSRC res = FindResourceA(g_self, ("KEY_" + key).c_str(), MAKEINTRESOURCEA(10));   // 10: RT_RCDATA
+    HGLOBAL mem = res ? LoadResource(g_self, res) : nullptr;
+    const void* data = mem ? LockResource(mem) : nullptr;
+    *size = data ? SizeofResource(g_self, res) : 0;
+    return *size ? data : nullptr;
+}
+
+// The key's picture, at 128 high (Name_Large) and 32 (Name): FH2Mouse\KeyIcons\<key>.png if
+// there's one, else the DLL's own (keyicons\<key>.png), else a light key with its name or arrows
+// drawn dark on it. A picture can be wider than high.
+void write_key(const std::string& name, const std::string& key, const uint8_t* glyph) {
+    std::vector<uint8_t> big;
+    int w = kKeySize;
+    const std::wstring png = g_dir + L"\\KeyIcons\\" + widen(key) + L".png";
+    std::size_t size = 0;
+    const void* builtin = builtin_picture(key, &size);
+    if (GetFileAttributesW(png.c_str()) != INVALID_FILE_ATTRIBUTES && load_picture(png.c_str(), 0, big, w)) {
+        g_custom_keys++;
+    } else if (!(builtin && load_picture(builtin, size, big, w))) {
+        if (GetFileAttributesW(png.c_str()) != INVALID_FILE_ATTRIBUTES)
+            logf("key icons: %ls can't be read", png.c_str());
+        w = kKeySize;
+        big.assign(kKeySize * kKeySize * 4, 0);
+        for (int i = 0; i < kKeySize * kKeySize; ++i) {
+            const int a = kKeyPlate.data[i], c = 245 - 219 * glyph[i] / 255;
+            const auto v = static_cast<uint8_t>(c * a / 255);
+            big[i * 4] = big[i * 4 + 1] = big[i * 4 + 2] = v;
+            big[i * 4 + 3] = static_cast<uint8_t>(a);
+        }
+    }
+    const std::string dir = "UI/textures/data_bound/FH2MouseKeys/";
+    auto put = [&](const std::string& file, const std::vector<uint8_t>& large, int lw) {
+        const int sw     = lw * kKeySmall / kKeySize;
+        const auto small = shrink(large, lw, kKeySize, sw, kKeySmall);
+        const std::string a = swatchbin(sw, kKeySmall, small.data()), b = swatchbin(lw, kKeySize, large.data());
+        return g_api->set_file(g_mod, (dir + file + ".swatchbin").c_str(), a.data(), a.size()) &&
+               g_api->set_file(g_mod, (dir + file + "_Large.swatchbin").c_str(), b.data(), b.size());
+    };
+    if (!put(name, big, w)) return;
+    if (w > kKeySize) {
+        // The square one: the key as wide as the square, in its middle.
+        const int h = std::max(8, kKeySize * kKeySize / w);
+        const auto fit = shrink(big, w, kKeySize, kKeySize, h);
+        std::vector<uint8_t> square(kKeySize * kKeySize * 4, 0);
+        std::memcpy(&square[static_cast<std::size_t>((kKeySize - h) / 2) * kKeySize * 4], fit.data(), fit.size());
+        if (!put(name + "_Sq", square, kKeySize)) return;
+        g_wide_keys.emplace_back(name, static_cast<float>(w) / kKeySize);
+    }
+    g_key_files.push_back(name);
+}
+
+// Every key an action can be given on the Mods page, and those the ini gives them: the pictures
+// the game will load (it doesn't see files that come later), written before it starts.
+void write_key_icons() {
+    std::vector<int> vks;
+    for (const char* c : kKeyChoices)
+        if (const int vk = vk_of(c)) vks.push_back(vk);
+    for (const auto& keys : g_action_keys)
+        for (int vk : keys)
+            if (vk) vks.push_back(vk);
+    std::sort(vks.begin(), vks.end());
+    vks.erase(std::unique(vks.begin(), vks.end()), vks.end());
+    std::vector<uint8_t> glyph(kKeySize * kKeySize);
+    for (int vk : vks) {
+        std::fill(glyph.begin(), glyph.end(), 0);
+        if (const int arrow = arrow_of(vk); arrow >= 0) draw_art(*kKeyArrows[arrow], glyph.data(), 1, 0, 0);
+        else draw_label(key_label(vk), glyph.data());
+        write_key(key_file(vk), key_name(vk), glyph.data());
+    }
+    // Both ways at once, for the d-pad's up / down and left / right.
+    std::fill(glyph.begin(), glyph.end(), 0);
+    draw_art(*kKeyArrows[0], glyph.data(), 0.62f, 0, -24), draw_art(*kKeyArrows[1], glyph.data(), 0.62f, 0, 24);
+    write_key("Key_UpDown", "UpDown", glyph.data());
+    std::fill(glyph.begin(), glyph.end(), 0);
+    draw_art(*kKeyArrows[2], glyph.data(), 0.62f, -24, 0), draw_art(*kKeyArrows[3], glyph.data(), 0.62f, 24, 0);
+    write_key("Key_LeftRight", "LeftRight", glyph.data());
+    logf("key icons: %d pictures, %d of them from FH2Mouse\\KeyIcons", static_cast<int>(g_key_files.size()), g_custom_keys);
+}
+
+int action_index(const char* name) {
+    for (int i = 0; i < kActionCount; ++i)
+        if (!std::strcmp(kActions[i].name, name)) return i;
+    return -1;
+}
+
+int first_key(const char* action) {
+    const int i = action ? action_index(action) : -1;
+    return i < 0 ? 0 : g_action_keys[i][0];
+}
+
+// The picture for a pad button ("X", "DPadUpDown"), or "": the key of the action that presses it
+// in the menus, or while driving.
+std::string key_picture(const std::wstring& button, bool driving) {
+    static const struct { const wchar_t* button; const char* menu[2]; const char* driving[2]; } buttons[] = {
+        {L"A", {"Accept"}, {}},
+        {L"B", {"Back"}, {}},
+        {L"X", {"ButtonX"}, {"Interact"}},
+        {L"Y", {"ButtonY"}, {}},
+        {L"Menu", {"Pause"}, {"Pause"}},
+        {L"View", {"ButtonView"}, {"Interact"}},
+        {L"LT", {"ButtonLT"}, {}},
+        {L"RT", {"ButtonRT"}, {}},
+        {L"L3", {"ButtonLS"}, {}},
+        {L"R3", {"ButtonRS"}, {}},
+        {L"LB", {"PreviousTab"}, {}},
+        {L"RB", {"NextTab"}, {}},
+        {L"DPadUp", {"Up"}, {}},
+        {L"DPadDown", {"Down"}, {}},
+        {L"DPadLeft", {"Left"}, {"RadioPrevious"}},
+        {L"DPadRight", {"Right"}, {"RadioNext"}},
+        {L"DPadUpDown", {"Up", "Down"}, {}},
+        {L"DPadLeftRight", {"Left", "Right"}, {"RadioPrevious", "RadioNext"}},
+    };
+    for (const auto& b : buttons) {
+        if (button != b.button) continue;
+        const char* const* actions = driving ? b.driving : b.menu;
+        const int vk = first_key(actions[0]);
+        if (!vk) return {};
+        std::string name = key_file(vk);
+        if (actions[1]) {
+            const int other = first_key(actions[1]);
+            if (vk == VK_UP && other == VK_DOWN) name = "Key_UpDown";
+            else if (vk == VK_LEFT && other == VK_RIGHT) name = "Key_LeftRight";
+        }
+        return std::find(g_key_files.begin(), g_key_files.end(), name) != g_key_files.end() ? name : std::string();
+    }
+    return {};
+}
+
+// A BitmapImage of ours, made once (and kept for good), or null.
+uint8_t* key_image(const std::string& file) {
+    static std::vector<std::pair<std::string, uint8_t*>> made;   // UI thread only
+    for (const auto& m : made)
+        if (m.first == file) return m.second;
+    const std::string uri = "/ForzaUI;component/Textures/Data_Bound/FH2MouseKeys/" + file + ".png";
+    auto* text = new uint8_t[0x80]();
+    game<AvuiStringFn>(RVA_AVUI_STRING)(text, uri.c_str(), -1);
+    InterlockedIncrement(reinterpret_cast<volatile LONG*>(text + 0x10));   // ours: never freed
+    void* converter = g_base + RVA_BITMAP_CONVERTER;   // an object, as far as it can tell: its vtable
+    uint8_t* image  = nullptr;
+    vfn<ConvertFromFn>(&converter, 8)(&converter, &image, nullptr, text);
+    if (g_cfg.debug) logf("key icon %s: %s", file.c_str(), image ? rtti_name(image) : "not made");
+    made.emplace_back(file, image);
+    return image;
+}
+
+constexpr uintptr_t RVA_SET_VALUE = 0x15F8A70;   // DependencyObject::SetValue(obj, property, value)
+using SetValueFn = void (*)(void* obj, void* property, void* value);
+
+// With `aspect`, the picture can be wider than high (a wide key's own, *aspect times as wide);
+// without, a wide key's is its square one.
+uint8_t* find_icon_for(void* element, uint8_t* name, bool driving, float* aspect = nullptr) {
+    if (aspect) *aspect = 1;
+    if (keys_shown() && name) {
+        const wchar_t* text = at<const wchar_t*>(name, 0x28);
+        const int n         = at<int>(name, 0x30);
+        static const wchar_t prefix[] = L"A_BitmapImage_ControllerButton_";
+        constexpr int np = sizeof prefix / sizeof prefix[0] - 1;
+        if (text && n > np && n < 128 && !std::wcsncmp(text, prefix, np)) {
+            std::wstring button(text + np, n - np);
+            bool large = false;
+            for (const wchar_t* size : {L"_Large", L"_Medium", L"_Small"}) {
+                const std::size_t len = std::wcslen(size);
+                if (button.size() > len && !button.compare(button.size() - len, len, size)) {
+                    large = !std::wcscmp(size, L"_Large");
+                    button.resize(button.size() - len);
+                }
+            }
+            std::string file = key_picture(button, driving);
+            if (!file.empty()) {
+                const float a = key_aspect(file);
+                if (a > 1 && !aspect) file += "_Sq";
+                if (uint8_t* image = key_image(large ? file + "_Large" : file)) {
+                    if (aspect) *aspect = a;
+                    return image;
+                }
+            }
+        }
+    }
+    return o_find_resource(element, name);
+}
+
+// A wide key's picture in the help bar: its icon (+0x1D8) and the icon's shadow (+0x1E0), boxes
+// as high as they are wide in its template, are made as wide as the picture is for that height.
+constexpr uintptr_t HELP_ICON = 0x1D8, HELP_ICON_SHADOW = 0x1E0;
+constexpr uintptr_t RVA_WIDTH_DP  = 0x36C6958;   // FrameworkElement::WidthProperty (a float)
+constexpr uintptr_t RVA_HEIGHT_DP = 0x36C5C18;   // FrameworkElement::HeightProperty (+0x20 of what 0x1649925 fills)
+constexpr uintptr_t RVA_BOX_FLOAT = 0x03F5990;   // ObjectPtr* box(ObjectPtr* out, const float*)
+using BoxFloatFn = void** (*)(uint8_t** out, const float* v);
+bool g_widths_ok = false;   // the above are as expected
+
+void set_icon_width(uint8_t* control, float aspect) {
+    void* width_dp = at<void*>(g_base, RVA_WIDTH_DP);
+    void* height_dp = at<void*>(g_base, RVA_HEIGHT_DP);
+    if (!g_widths_ok || !width_dp || !height_dp) return;
+    for (uintptr_t off : {HELP_ICON, HELP_ICON_SHADOW}) {
+        uint8_t* icon = at<uint8_t*>(control, off);
+        if (!icon) continue;
+        uint8_t* boxed = nullptr;
+        game<DpGetValueFn>(RVA_DP_GET_VALUE)(icon, &boxed, height_dp);
+        const float h = boxed && boxed != game<UnsetFn>(RVA_UNSET_VALUE)() ? at<float>(boxed, 0x28) : 0;
+        release(boxed);
+        if (!(h > 0 && h < 1000)) continue;   // not a number of pixels: left as it is
+        const float w = h * aspect;
+        uint8_t* value = nullptr;
+        game<BoxFloatFn>(RVA_BOX_FLOAT)(&value, &w);
+        if (value) game<SetValueFn>(RVA_SET_VALUE)(icon, width_dp, value), release(value);
+    }
+}
+
+// The help bar: the menus' keys (photo mode's are those too). It's made before the focus comes
+// to its page, so where the focus is says nothing.
+void set_icon_width_guarded(uint8_t* control, float aspect) {
+    __try {
+        set_icon_width(control, aspect);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        g_widths_ok = false;
+        logf("the help bar's icon isn't as expected: wide keys show squeezed");
+    }
+}
+
+uint8_t* find_icon(void* element, uint8_t* name) {
+    float aspect = 1;
+    uint8_t* image = find_icon_for(element, name, false, &aspect);
+    if (element) set_icon_width_guarded(static_cast<uint8_t*>(element), aspect);
+    return image;
+}
+
+// Pictures pages name in their XAML ("PRESS (A) TO START") are the game's own BitmapImages, one
+// for each resource, shared by everything showing it. Their UriSource (a dependency property,
+// 0x36B1178, as the constructor at 0x76EBB0 sets it) is pointed at the key's texture while the
+// keys are shown, and back at the pad's after; what shows them loads the new picture. They're the
+// menus' keys, but large ones are the HUD's, so they're the driving keys where those have one.
+constexpr uintptr_t RVA_URI_SOURCE_DP = 0x36B1178;   // BitmapImage::UriSourceProperty
+
+struct SharedIcon {
+    const wchar_t* button;
+    bool large;
+    uint8_t* image   = nullptr;   // the game's (a reference of ours)
+    uint8_t* pad_uri = nullptr;   // its own Uri (a reference of ours)
+};
+std::vector<SharedIcon> g_shared_icons;   // UI thread only
+
+uint8_t* uri_of(uint8_t* image) {
+    void* dp = at<void*>(g_base, RVA_URI_SOURCE_DP);
+    uint8_t* boxed = nullptr;
+    if (dp && image) game<DpGetValueFn>(RVA_DP_GET_VALUE)(image, &boxed, dp);
+    if (boxed && boxed == game<UnsetFn>(RVA_UNSET_VALUE)()) release(boxed), boxed = nullptr;
+    return boxed;
+}
+
+bool find_shared_icons(uint8_t* root) {
+    static const wchar_t* const buttons[] = {L"A", L"B", L"X", L"Y", L"Menu", L"View", L"LB", L"RB", L"DPadUp", L"DPadDown",
+                                             L"DPadLeft", L"DPadRight", L"DPadUpDown", L"DPadLeftRight",
+                                             L"LT", L"RT", L"L3", L"R3"};
+    for (const wchar_t* b : buttons)
+        for (bool large : {false, true}) {
+            char name[96];
+            std::snprintf(name, sizeof name, "A_BitmapImage_ControllerButton_%ls%s", b, large ? "_Large" : "");
+            auto* text = new uint8_t[0x80]();   // kept: the game may hold on to what it's asked with
+            game<AvuiStringFn>(RVA_AVUI_STRING)(text, name, -1);
+            InterlockedIncrement(reinterpret_cast<volatile LONG*>(text + 0x10));
+            SharedIcon s{b, large};
+            s.image = o_find_resource(root, text);
+            if (!s.image || std::strcmp(rtti_name(s.image), ".?AVBitmapImage@AVUI@@")) continue;
+            if (!(s.pad_uri = uri_of(s.image))) continue;
+            InterlockedIncrement(reinterpret_cast<volatile LONG*>(s.image + 0x10));
+            g_shared_icons.push_back(s);
+        }
+    logf("key icons: %d shared pictures", static_cast<int>(g_shared_icons.size()));
+    return !g_shared_icons.empty();
+}
+
+bool g_shared_ok = false;   // SetValue is as expected
+
+// False if they can't be found yet (no window to look from).
+bool swap_shared_icons() {
+    static bool found = false;
+    if (!g_shared_ok) return true;
+    if (!found) {
+        uint8_t* root = active_window();
+        if (!root || !(found = find_shared_icons(root))) return false;
+    }
+    void* dp = at<void*>(g_base, RVA_URI_SOURCE_DP);
+    static std::vector<std::pair<std::string, uint8_t*>> uris;   // our pictures' Uris, kept
+    for (const SharedIcon& s : g_shared_icons) {
+        uint8_t* uri = s.pad_uri;
+        if (keys_shown()) {
+            std::string file = s.large ? key_picture(s.button, true) : std::string();
+            if (file.empty()) file = key_picture(s.button, false);
+            if (!file.empty()) {
+                if (key_aspect(file) > 1) file += "_Sq";   // the page has a square for it
+                if (s.large) file += "_Large";
+                auto it = std::find_if(uris.begin(), uris.end(), [&](const auto& u) { return u.first == file; });
+                if (it == uris.end()) uris.emplace_back(file, uri_of(key_image(file))), it = uris.end() - 1;
+                if (it->second) uri = it->second;
+            }
+        }
+        if (uri) game<SetValueFn>(RVA_SET_VALUE)(s.image, dp, uri);
+    }
+    return true;
+}
+
+// The activate buttons that showed a picture lately, each with a reference of ours, to show them
+// again when the device changes: they're in the HUD, not under the active window. One only we
+// hold is gone from the screen, and let go.
+std::vector<uint8_t*> g_activate_buttons;   // UI thread only
+
+uint8_t* find_activate_icon(void* element, uint8_t* name) {
+    auto* el = static_cast<uint8_t*>(element);
+    if (el && std::find(g_activate_buttons.begin(), g_activate_buttons.end(), el) == g_activate_buttons.end()) {
+        InterlockedIncrement(reinterpret_cast<volatile LONG*>(el + 0x10));
+        g_activate_buttons.push_back(el);
+        if (g_activate_buttons.size() > 16) release(g_activate_buttons.front()), g_activate_buttons.erase(g_activate_buttons.begin());
+    }
+    return find_icon_for(element, name, true);
+}
+
+void refresh_activate_buttons() {
+    for (std::size_t i = 0; i < g_activate_buttons.size();) {
+        uint8_t* el = g_activate_buttons[i];
+        if (at<LONG>(el, 0x10) <= 1) {
+            release(el);
+            g_activate_buttons.erase(g_activate_buttons.begin() + static_cast<std::ptrdiff_t>(i));
+            continue;
+        }
+        at_ref<int>(el, ACTIVATE_SHOWN) = -1;   // else it's the control it shows, and it does nothing
+        game<ActivateUpdateFn>(RVA_ACTIVATE_UPDATE)(el);
+        ++i;
+    }
+}
+
+// The help bar's buttons on screen, shown again (through find_icon).
+void refresh_icons_in(uint8_t* v, int depth, int& visited) {
+    if (!v || depth > 80 || ++visited > 20000) return;
+    void* t = type_of(v);
+    if (!is(t, TYPE_VISUAL)) return;
+    if (is(t, TYPE_HELP_BUTTON)) {
+        if (const int type = help_button_type(v); type >= 0) game<IconUpdateFn>(RVA_ICON_UPDATE)(v, type);
+        return;
+    }
+    const int n = vfn<CountFn>(v, VT_CHILD_COUNT)(v);
+    for (int i = 0; i < n && i < 4096; ++i) refresh_icons_in(vfn<ChildFn>(v, VT_CHILD)(v, i), depth + 1, visited);
+}
+
+bool any_pad();
+
+// A pad's button, trigger or stick, pressed on any of the four (XInput, read directly: not the
+// game's input, which has the keys in it).
+bool pad_used() {
+    using GetStateFn = DWORD(WINAPI*)(DWORD, XINPUT_STATE*);
+    static GetStateFn get = [] {
+        HMODULE m = LoadLibraryExW(L"xinput1_4.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        return m ? reinterpret_cast<GetStateFn>(reinterpret_cast<void*>(GetProcAddress(m, "XInputGetState"))) : nullptr;
+    }();
+    static XINPUT_GAMEPAD last[4] = {};
+    static bool connected[4]      = {};
+    static DWORD tried[4]         = {};
+    if (!get) return false;
+    bool used = false;
+    for (DWORD p = 0; p < 4; ++p) {
+        // Asking a port with no pad is slow: those only every two seconds.
+        if (!connected[p] && tried[p] && GetTickCount() - tried[p] < 2000) continue;
+        XINPUT_STATE s{};
+        if (get(p, &s) != ERROR_SUCCESS) {
+            connected[p] = false, tried[p] = GetTickCount();
+            continue;
+        }
+        const XINPUT_GAMEPAD& g = s.Gamepad;
+        const XINPUT_GAMEPAD& o = last[p];
+        auto pushed = [](int now, int before, int limit) { return std::abs(now) > limit && std::abs(before) <= limit; };
+        if (connected[p] && ((g.wButtons & ~o.wButtons) || pushed(g.bLeftTrigger, o.bLeftTrigger, 100) ||
+                             pushed(g.bRightTrigger, o.bRightTrigger, 100) || pushed(g.sThumbLX, o.sThumbLX, 16000) ||
+                             pushed(g.sThumbLY, o.sThumbLY, 16000) || pushed(g.sThumbRX, o.sThumbRX, 16000) ||
+                             pushed(g.sThumbRY, o.sThumbRY, 16000)))
+            used = true;
+        connected[p] = true, last[p] = g;
+    }
+    return used;
+}
+
+// A key or a mouse button pressed, with the game in front.
+bool keys_used() {
+    static uint8_t down[256] = {};
+    HWND h           = g_hwnd.load();
+    const bool front = h && GetForegroundWindow() == h;
+    bool used        = false;
+    for (int vk = 1; vk < 255; ++vk) {
+        const bool now = front && (GetAsyncKeyState(vk) & 0x8000);
+        if (now && !down[vk]) used = true;
+        down[vk] = now;
+    }
+    return used;
+}
+
+// Once a UI frame: which of the two was used last, and the help bar shown again when it changes.
+void icons_frame() {
+    if (!g_icons_hooked) return;
+    static bool started = false;
+    const bool pad = pad_used(), keys = keys_used();
+    if (!started) {
+        started       = true;
+        g_keys_last   = !any_pad();
+        g_icons_stale = true;
+    }
+    if (keys && !g_keys_last.load()) g_keys_last = true, g_icons_stale = true;
+    else if (pad && !keys && g_keys_last.load()) g_keys_last = false, g_icons_stale = true;
+    if (!g_icons_stale.exchange(false)) return;
+    if (g_cfg.debug) logf("key icons: %s", keys_shown() ? "keys" : "the pad's buttons");
+    if (!swap_shared_icons()) g_icons_stale = true;   // again next frame
+    int visited = 0;
+    refresh_icons_in(active_window(), 0, visited);
+    refresh_activate_buttons();
+}
+
+void hook_key_icons() {
+    if (g_key_files.empty() || !g_api->hook_call) return;
+    static const uint8_t update_bytes[] = {0x89, 0x54, 0x24, 0x10, 0x56, 0x57, 0x41, 0x56, 0x48, 0x83, 0xEC, 0x40};
+    static const uint8_t string_bytes[] = {0x48, 0x89, 0x4C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x30};
+    bool ok = !std::memcmp(g_base + RVA_ICON_UPDATE, update_bytes, sizeof update_bytes) &&
+              !std::memcmp(g_base + RVA_AVUI_STRING, string_bytes, sizeof string_bytes) &&
+              at<uint8_t*>(g_base, RVA_BITMAP_CONVERTER) == g_base + RVA_CAN_CONVERT &&
+              at<uint8_t*>(g_base, RVA_BITMAP_CONVERTER + 8) == g_base + RVA_CONVERT_FROM;
+    auto calls_find = [](uintptr_t site) {
+        const uint8_t* p = g_base + site;
+        return p[0] == 0xE8 && p + 5 + at<int32_t>(p, 1) == g_base + RVA_FIND_RESOURCE;
+    };
+    for (uintptr_t site : RVA_ICON_FINDS) ok = ok && calls_find(site);
+    // What's hooked calls on to the game's own, and does only that unless the help bar's both are.
+    o_find_resource = game<FindResourceFn>(RVA_FIND_RESOURCE);
+    if (ok)
+        for (uintptr_t site : RVA_ICON_FINDS)
+            ok = ok && g_api->hook_call(g_mod, "key icons: FindResource", g_base + site, reinterpret_cast<void*>(&find_icon),
+                                        reinterpret_cast<void**>(&o_find_resource));
+    // The activate buttons: optional.
+    static const uint8_t activate_bytes[] = {0x40, 0x55, 0x56, 0x57, 0x41, 0x56, 0x41, 0x57, 0x48, 0x8D, 0x6C, 0x24};
+    if (ok && !(!std::memcmp(g_base + RVA_ACTIVATE_UPDATE, activate_bytes, sizeof activate_bytes) &&
+                calls_find(RVA_ACTIVATE_FIND) &&
+                g_api->hook_call(g_mod, "key icons: FindResource (activate)", g_base + RVA_ACTIVATE_FIND,
+                                 reinterpret_cast<void*>(&find_activate_icon), reinterpret_cast<void**>(&o_find_resource))))
+        logf("the activate button's pictures aren't as expected: the HUD's prompts show the pad's buttons");
+    g_api->enable_hooks(g_mod, nullptr);
+    g_icons_hooked = ok;
+    static const uint8_t set_value_bytes[] = {0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48};
+    g_shared_ok = ok && !std::memcmp(g_base + RVA_SET_VALUE, set_value_bytes, sizeof set_value_bytes);
+    static const uint8_t box_float_bytes[] = {0x40, 0x53, 0x48, 0x83, 0xEC, 0x30, 0x48, 0x8B, 0xD9, 0xC7, 0x44, 0x24};
+    g_widths_ok = g_shared_ok && !std::memcmp(g_base + RVA_BOX_FLOAT, box_float_bytes, sizeof box_float_bytes);
+    if (ok && !g_shared_ok) logf("SetValue isn't as expected: pictures pages draw themselves show the pad's buttons");
+    if (!ok) logf("the help bar's pictures aren't as expected: it shows the pad's buttons");
 }
 
 // ---- tab strips ----------------------------------------------------------------------------------
@@ -2211,6 +2979,7 @@ void keyboard_frame() {
 void map_frame_guarded() {
     __try {
         keyboard_frame();
+        icons_frame();
         photo_frame();
         debug_frame();
         map_frame();
@@ -2455,6 +3224,7 @@ DWORD WINAPI start(LPVOID) {
     else
         logf("photo mode's camera isn't as expected: no mouse there");
     hook_nitro();
+    hook_key_icons();   // last: it enables what it hooked only when all of it is
     g_arrow = LoadCursorW(nullptr, IDC_ARROW);
     if (HANDLE t = CreateThread(nullptr, 0, window_thread, nullptr, 0, nullptr)) CloseHandle(t);
     if (HANDLE t = CreateThread(nullptr, 0, hook_thread, nullptr, 0, nullptr)) CloseHandle(t);
@@ -2485,6 +3255,7 @@ FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
         return 0;
     }
     add_keyboard_rows();
+    if (g_keyboard) write_key_icons();   // before the game reads its files
     if (HANDLE t = CreateThread(nullptr, 0, start, nullptr, 0, nullptr)) CloseHandle(t);
     return 0;
 }

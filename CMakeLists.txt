@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(fh2mouse VERSION 1.1.0 LANGUAGES C CXX RC)
+project(fh2mouse VERSION 1.2.0 LANGUAGES C CXX RC)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -9,8 +9,11 @@ endif()
 
 add_subdirectory(platform)   # fh2mod_platform (d3dcompiler_47.dll / DWrite.dll) and fh2mod_api
 
-add_library(fh2mouse SHARED src/fh2mouse.cpp)
-target_link_libraries(fh2mouse PRIVATE fh2mod_api user32)
+add_library(fh2mouse SHARED src/fh2mouse.cpp src/keyicons.rc)
+# rc files don't track what they embed, so changing a key picture would not rebuild the DLL
+file(GLOB KEY_ICONS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/keyicons/*.png)
+set_source_files_properties(src/keyicons.rc PROPERTIES OBJECT_DEPENDS "${KEY_ICONS}")
+target_link_libraries(fh2mouse PRIVATE fh2mod_api user32 gdi32 ole32 windowscodecs uuid)
 set_target_properties(fh2mouse PROPERTIES OUTPUT_NAME FH2Mouse PREFIX "")
 target_compile_definitions(fh2mouse PRIVATE FH2MOUSE_VERSION="${PROJECT_VERSION}"
                            _WIN32_WINNT=0x0A00 WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
