@@ -116,7 +116,7 @@ The game's UI library still contains a mouse system, but the Xbox build never fe
 FH2Mouse builds with [llvm-mingw](https://github.com/mstorsjo/llvm-mingw/releases) and CMake, with the platform as a git submodule:
 
 ```bash
-git clone --recursive https://github.com/qiangqiang101/FH2Mouse
+git clone --recursive https://github.com/qiangqiang101/FH2MouseKeyboard
 cmake -S . -B build -G Ninja -DCMAKE_C_COMPILER=x86_64-w64-mingw32-clang -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-clang++ -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres
 cmake --build build
 ```

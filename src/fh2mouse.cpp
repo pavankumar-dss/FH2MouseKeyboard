@@ -3310,7 +3310,7 @@ FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
     info.size             = sizeof info;
     info.name             = "FH2 Mouse & Keyboard";
     info.version          = FH2MOUSE_VERSION;
-    info.github_repo      = "qiangqiang101/FH2Mouse";
+    info.github_repo      = "qiangqiang101/FH2MouseKeyboard";
     info.platform_version = FH2MOD_PLATFORM_VERSION;
     info.check_updates    = 1;
     info.description      = "Drive with the keyboard, point at things in the menus and click them, drag the map, turn the garage camera, place decals with the keyboard, and fly the photo mode camera, all without picking up a controller.";
