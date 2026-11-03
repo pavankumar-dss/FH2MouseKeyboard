@@ -3,7 +3,7 @@
 root=/c/Users/ADMIN/Documents/GitHub/FH2Mouse
 game=/d/Games/FH2/azimuth-windows
 taskkill //IM azimuth.exe //F >/dev/null 2>&1; sleep 3
-cp "$root/build/FH2Mouse.dll" "$game/fh2-mods/" || exit 1
+cp "$root/build/Release/FH2Mouse.dll" "$game/fh2-mods/" || exit 1
 cd "$game" && (./azimuth.exe --skip-launcher >/dev/null 2>&1 &)
 for i in $(seq 1 40); do grep -q "FH2Mouse\] watching" "$game/fh2-mods/platform.log" 2>/dev/null && break; sleep 2; done
 sleep 15

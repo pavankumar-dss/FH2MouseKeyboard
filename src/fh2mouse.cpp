@@ -16,6 +16,12 @@
 #include <algorithm>
 #include <array>
 #include <xinput.h>
+#ifdef _MSC_VER
+#include <intrin.h>
+#define RETURN_ADDRESS() _ReturnAddress()
+#else
+#define RETURN_ADDRESS() __builtin_return_address(0)
+#endif
 #include <cctype>
 #include <atomic>
 #include <cstdarg>
@@ -167,6 +173,7 @@ struct Settings {
     bool hover_focus  = true;
     DWORD hide_ms     = 3000;   // the cursor hides this long after the mouse last moved (0: never)
     bool debug        = false;  // log what's under the cursor
+    bool free_look    = true;   // the mouse looks around while driving
     int frame_rate    = 0;      // the game's frame rate, if measuring it goes wrong (0: measure)
 } g_cfg;
 
@@ -186,6 +193,7 @@ struct Action {
     int key;             // the menu key it presses, or 0
     bool menu;           // counts in the menus (else while driving)
     uint64_t pad = 0;    // the pad's own buttons it holds, for what doesn't ask by control
+    DWORD min_ms = 0;    // a press holds them at least this long, for what wants them held
 };
 const Action kActions[] = {
     {"Gas", "Gas", "W", 0, 1, 0, false},
@@ -206,6 +214,9 @@ const Action kActions[] = {
     // The radio reads the d-pad's buttons itself: left / right, with the bits the pad sets with them.
     {"RadioPrevious", "Previous station", "Comma", -1, 0, 0, false, 0xC0000004ull},
     {"RadioNext", "Next station", "Period", -1, 0, 0, false, 0xC0000008ull},
+    // Telemetry is the d-pad's down, and its pages its left / right: the radio's keys. It takes
+    // the d-pad only once it's been down a moment (a 120 ms press doesn't do, 250 ms does).
+    {"Telemetry", "Telemetry", "T", -1, 0, 0, false, 0x140000002ull, 300},
     // The HUD's prompts ("Enter garage"): control 21, on X with an automatic gearbox and on Back
     // with a manual one, asked by the HUD at 0x78B745.
     {"Interact", "Enter garage (prompts)", "Enter", 21, 1, 0, false},
@@ -428,6 +439,7 @@ void load_settings() {
             "; are clickable. Map: drag to pan, click to select or set a waypoint, wheel to zoom.\r\n"
             "; Garage: drag empty space to turn the camera, wheel to zoom; W A S D move a decal.\r\n"
             "; Photo mode: drag to turn, W A S D to move, Q / E down / up, wheel to zoom.\r\n"
+            "; Driving: move the mouse to look around.\r\n"
             "[Mouse]\r\n"
             "Enabled=1\r\n"
             "\r\n"
@@ -440,6 +452,9 @@ void load_settings() {
             "; The game's frame rate. 0 = measure it (the log says what it found). Set it (30, 60,\r\n"
             "; 120, 144...) only if photo mode or the garage camera turns too fast or too slow.\r\n"
             "FrameRate=0\r\n"
+            "\r\n"
+            "; While driving, the mouse looks around (it stays in the window: Alt+Tab to leave it).\r\n"
+            "FreeLook=1\r\n"
             "\r\n"
             "; Log what is under the cursor to fh2-mods\\platform.log.\r\n"
             "Debug=0\r\n";
@@ -454,6 +469,7 @@ void load_settings() {
     g_cfg.hover_focus = GetPrivateProfileIntW(L"Mouse", L"HoverSelects", 1, ini.c_str()) != 0;
     g_cfg.hide_ms     = GetPrivateProfileIntW(L"Mouse", L"HideAfterSeconds", 3, ini.c_str()) * 1000u;
     g_cfg.debug       = GetPrivateProfileIntW(L"Mouse", L"Debug", 0, ini.c_str()) != 0;
+    g_cfg.free_look   = GetPrivateProfileIntW(L"Mouse", L"FreeLook", 1, ini.c_str()) != 0;
     g_cfg.frame_rate  = std::min(1000, static_cast<int>(GetPrivateProfileIntW(L"Mouse", L"FrameRate", 0, ini.c_str())));
     load_keys(ini);
 }
@@ -485,6 +501,7 @@ std::atomic<DWORD> g_last_frame{0};         // GetTickCount of the last UI frame
 std::atomic<bool> g_framed{false};          // a UI frame has run (the game is up)
 float g_ui_dt = 1.f / 30;                   // the last UI frame's length, in seconds (UI thread)
 std::atomic<bool> g_shown{false};           // what the window was last told
+std::atomic<bool> g_looking{false};         // the mouse turns the driving camera (see "free look")
 HCURSOR g_arrow = nullptr;
 
 bool game_active() { return g_framed.load() && GetTickCount() - g_last_frame.load() < 1000; }
@@ -511,7 +528,7 @@ struct FrameClock {
 };
 
 bool cursor_wanted() {
-    if (!g_cfg.enabled || !game_active() || !g_last_move.load()) return false;
+    if (!g_cfg.enabled || !game_active() || !g_last_move.load() || g_looking.load()) return false;
     return g_cfg.hide_ms == 0 || GetTickCount() - g_last_move.load() < g_cfg.hide_ms;
 }
 
@@ -583,7 +600,8 @@ void poll_mouse() {
     RECT r{};
     bool inside = false;
     if (front && GetCursorPos(&p) && ScreenToClient(h, &p) && GetClientRect(h, &r)) inside = PtInRect(&r, p) != 0;
-    if (inside && (p.x != g_cx.load() || p.y != g_cy.load())) {
+    // While the mouse looks around (free look), its moves are the camera's, not the cursor's.
+    if (inside && !g_looking.load() && (p.x != g_cx.load() || p.y != g_cy.load())) {
         g_cx        = p.x;
         g_cy        = p.y;
         g_last_move = GetTickCount();
@@ -994,6 +1012,9 @@ bool driving(void* input, int context, int control) {
 // themselves, like the radio's d-pad and the menus' tile grids, gets the keys' bits from there,
 // put in after the update, so to the game they're the pad's buttons, held, pressed and released.
 constexpr uintptr_t RVA_INPUT_UPDATE = 0x1075490;
+constexpr uintptr_t RVA_INPUTS       = 0x365D7C8;   // the players' inputs, 0x1300 apart from +0x10
+constexpr uintptr_t INPUTS_DEVICE    = 0x70;        // in each: its pad, or null
+constexpr uintptr_t INPUTS_CURRENT   = 0xAB28;      // the current player's (one of them)
 constexpr uintptr_t INPUT_CONNECTED  = 0x4;    // bool: its pad is there
 constexpr uintptr_t INPUT_BUTTONS    = 0x78;
 // A pad's state is at +0x70 (this frame) and +0x128 (the last, for what was just pressed):
@@ -1001,6 +1022,9 @@ constexpr uintptr_t INPUT_STATE      = 0x70;
 constexpr uintptr_t INPUT_LAST_STATE = 0x128;
 constexpr uintptr_t STATE_BUTTONS    = 0x8;    // the buttons' bits
 constexpr uintptr_t STATE_DPAD       = 0x10;   // the d-pad as a direction: {dir, angle, length, x, y}
+// And the pad's own XINPUT_STATE, as read (+0x4C: dwPacketNumber, +0x50: wButtons). Extra Options'
+// plugins (Weather Control's "Change time") read the buttons there, not the game's.
+constexpr uintptr_t STATE_XINPUT_BUTTONS = 0x50;
 
 // The d-pad's direction, as the pad gives it with its bits (what the tile grids go by): 0 up, 2
 // left, 4 down, 6 right (counterclockwise, 8 none), the angle from up, the length, x and y.
@@ -1019,6 +1043,20 @@ void set_dpad(uint8_t* state, uint64_t bits) {
 using InputUpdateFn = uintptr_t (*)(void* inputs, float dt);
 InputUpdateFn o_input_update = nullptr;
 std::atomic<uint32_t> g_input_frame{0};   // counts the game's input updates (0: not hooked)
+std::atomic<uint64_t> g_click_bits{0};    // a help bar click's pad buttons (see help_click), held
+std::atomic<DWORD> g_click_until{0};      // ... till then
+
+// The pad's buttons the keys (and a help bar click) hold.
+uint64_t keys_pad_bits() {
+    uint64_t bits = 0;
+    for (int i = 0; i < kActionCount; ++i)
+        if (kActions[i].pad && g_held[i].load()) bits |= kActions[i].pad;
+    if (const uint64_t click = g_click_bits.load()) {
+        if (static_cast<LONG>(g_click_until.load() - GetTickCount()) > 0) bits |= click;
+        else g_click_bits = 0;
+    }
+    return bits;
+}
 
 uintptr_t input_update(void* inputs, float dt) {
     const uintptr_t r = o_input_update(inputs, dt);
@@ -1038,9 +1076,7 @@ uintptr_t input_update(void* inputs, float dt) {
     // The keys are its pad now: when the pad goes, the car (0x2FD9E3) stops reading an input
     // that isn't connected and the HUD pauses the game for it, so it stays connected.
     in[INPUT_CONNECTED] = 1;
-    uint64_t bits = 0;
-    for (int i = 0; i < kActionCount; ++i)
-        if (kActions[i].pad && g_held[i].load()) bits |= kActions[i].pad;
+    const uint64_t bits = keys_pad_bits();
     buttons |= bits;
     if (bits & 0xF) set_dpad(in + INPUT_STATE, bits);
     // Last frame's state is the pad's alone, so what the keys held then goes in there too:
@@ -1049,6 +1085,20 @@ uintptr_t input_update(void* inputs, float dt) {
     if (last_bits & 0xF) set_dpad(in + INPUT_LAST_STATE, last_bits);
     last_bits = bits;
     return r;
+}
+
+// Extra Options' plugins (Weather Control's "(Y) Change time") read the pad's buttons as read, in
+// the current player's input (the inputs' +0xAB28), while it's connected, from the UI's update.
+// Signed in without a pad, that isn't the input the menus ask (the inputs' +0x9810, nobody's),
+// and without a pad its state is cleared before the UI's update. So, just before it, the keys'
+// buttons go there, and it's connected while the keys play.
+void plugin_buttons() {
+    if (!g_keyboard || !o_input_update) return;
+    uint8_t* inputs = at<uint8_t*>(g_base, RVA_INPUTS);
+    uint8_t* cur    = inputs ? at<uint8_t*>(inputs, INPUTS_CURRENT) : nullptr;
+    if (!cur) return;
+    cur[INPUT_CONNECTED] = 1;
+    *reinterpret_cast<uint16_t*>(cur + INPUT_STATE + STATE_XINPUT_BUTTONS) |= static_cast<uint16_t>(keys_pad_bits());
 }
 
 // What the keys add to a driving control's value (0 if none is held).
@@ -1063,6 +1113,66 @@ float key_value(void* input, int context, int control) {
 float with_keys(float v, void* input, int context, int control) {
     const float k = key_value(input, context, control);
     return k ? std::max(-1.f, std::min(1.f, v + k)) : v;
+}
+
+// ---- free look ----------------------------------------------------------------------------------
+// The driving cameras look where the right stick points (0x103F9D0): the angle of (right - left,
+// up - back), from controls 12 / 11 / 9 / 10 read with GetDigital, and straight ahead again once
+// the stick is let go. While a driving camera asks for them (and the game window is in front),
+// the mouse is held in the middle of the window, hidden, and moving it sideways turns the camera
+// as far as it's moved, all the way round (straight back after pi / kLookPerPixel pixels). A moment after the mouse
+// stops, the camera turns back ahead, as when the stick is let go.
+constexpr float kPi = 3.14159265f, kLookPerPixel = 0.006f;
+constexpr DWORD kLookHoldMs = 1000;   // how long a look stays before it turns back
+std::atomic<float> g_look_yaw{0};     // radians, + to the right
+std::atomic<DWORD> g_look_asked{0};   // when a driving camera last asked for the right stick
+
+float look_value(void* input, int context, int control) {
+    if (context != kDriving || control < 9 || control > 12 || !game<ContextActiveFn>(RVA_CONTEXT_ACTIVE)(input, kDriving))
+        return 0;
+    g_look_asked = GetTickCount();
+    // Looking ahead is the stick let go, not pushed up: else the pad's stick couldn't turn it.
+    const float a = g_look_yaw.load();
+    if (!g_looking.load() || g_in_menu.load() || a == 0) return 0;
+    const float c = std::cos(a), s = std::sin(a);
+    switch (control) {
+        case 9: return std::max(c, 0.f);    // ahead
+        case 10: return std::max(-c, 0.f);  // back
+        case 11: return std::max(-s, 0.f);  // left
+        default: return std::max(s, 0.f);   // right
+    }
+}
+
+// Once a UI frame.
+void look_frame() {
+    static DWORD moved = 0;
+    HWND h         = g_hwnd.load();
+    const bool on  = g_cfg.free_look && h && GetForegroundWindow() == h && o_get_digital && !g_in_menu.load() &&
+                     GetTickCount() - g_look_asked.load() < 250;
+    RECT r{};
+    POINT mid{}, p{};
+    if (on) GetClientRect(h, &r), mid = {r.right / 2, r.bottom / 2};
+    if (!on || !ClientToScreen(h, &mid) || !GetCursorPos(&p)) {
+        g_looking  = false;
+        g_look_yaw = 0;
+        return;
+    }
+    if (!g_looking.load()) {   // from where the cursor was: nothing to turn by yet
+        g_looking = true, moved = 0;
+        SetCursorPos(mid.x, mid.y);
+        return;
+    }
+    float yaw = g_look_yaw.load();
+    if (p.x != mid.x || p.y != mid.y) {
+        yaw   = std::remainder(yaw + (p.x - mid.x) * kLookPerPixel, 2 * kPi);   // round and round
+        if (yaw == 0) yaw = 1e-6f;   // 0 is let go
+        moved = GetTickCount();
+        SetCursorPos(mid.x, mid.y);
+    } else if (yaw && GetTickCount() - moved > kLookHoldMs) {
+        yaw *= std::exp(-6 * g_ui_dt);
+        if (std::abs(yaw) < 0.01f) yaw = 0;
+    }
+    g_look_yaw = yaw;
 }
 
 // A key's press, to each place in the game's code that asks within a moment of it, once: for
@@ -1130,12 +1240,12 @@ bool was_pressed(void* input, int context, int control, uint8_t a) {
             static DWORD last_t = 0;
             if (context != last_ctx || control != last_ctl || GetTickCount() - last_t > 500)
                 logf("pad pressed: context %d control %d (a %d), asked from game+0x%llX", context, control, a,
-                     static_cast<unsigned long long>(static_cast<uint8_t*>(__builtin_return_address(0)) - g_base));
+                     static_cast<unsigned long long>(static_cast<uint8_t*>(RETURN_ADDRESS()) - g_base));
             last_ctx = context, last_ctl = control, last_t = GetTickCount();
         }
         return true;
     }
-    if (key_pressed(input, context, control, __builtin_return_address(0))) return true;
+    if (key_pressed(input, context, control, RETURN_ADDRESS())) return true;
     if (context != 7) return false;
     // Like a real press: "pressed" to the first asker once, "released" once (later).
     const int phase = g_press_phase.load();
@@ -1144,7 +1254,7 @@ bool was_pressed(void* input, int context, int control, uint8_t a) {
     else if (phase == 2 && control == g_release_ctl.load()) r = !g_release_told.exchange(true);
     if (phase && g_cfg.debug && (control == g_press_ctl.load() || control == g_release_ctl.load()))
         logf("fake press: control %d asked from game+0x%llX in phase %d: %d", control,
-             static_cast<unsigned long long>(static_cast<uint8_t*>(__builtin_return_address(0)) - g_base), phase, r);
+             static_cast<unsigned long long>(static_cast<uint8_t*>(RETURN_ADDRESS()) - g_base), phase, r);
     return r;
 }
 
@@ -1210,10 +1320,25 @@ int help_button_key(uint8_t* el) {
     return key;
 }
 
+// Better still, the pad's button itself held a moment, as its key holds it: some pages look at
+// the button being down too (the Autoshow's "(View) Take photo"), and Extra Options' plugins
+// read only that ("(Y) Change time"). False if no key holds that button (or no input update).
+bool click_pad(int key) {
+    if (!g_keyboard || !o_input_update || !g_player.load()) return false;
+    for (const Action& a : kActions) {
+        if (a.key != key || !a.pad) continue;
+        g_click_until = GetTickCount() + 100;
+        g_click_bits  = a.pad;
+        if (g_cfg.debug) logf("help bar click: pad buttons %llx held", static_cast<unsigned long long>(a.pad));
+        return true;
+    }
+    return false;
+}
+
 bool help_click(uint8_t* ctl) {
     if (!is_help_button(ctl)) return false;
     if (const int key = help_button_key(ctl)) {
-        if (!press_pad(key)) {
+        if (!click_pad(key) && !press_pad(key)) {
             send_key(key, false);
             send_key(key, true);
         }
@@ -1528,8 +1653,8 @@ void write_key(const std::string& name, const std::string& key, const uint8_t* g
     const std::string dir = "UI/textures/data_bound/FH2MouseKeys/";
     auto put = [&](const std::string& file, const std::vector<uint8_t>& large, int lw) {
         const int sw     = lw * kKeySmall / kKeySize;
-        const auto small = shrink(large, lw, kKeySize, sw, kKeySmall);
-        const std::string a = swatchbin(sw, kKeySmall, small.data()), b = swatchbin(lw, kKeySize, large.data());
+        const auto little = shrink(large, lw, kKeySize, sw, kKeySmall);   // not "small": rpcndr.h defines it
+        const std::string a = swatchbin(sw, kKeySmall, little.data()), b = swatchbin(lw, kKeySize, large.data());
         return g_api->set_file(g_mod, (dir + file + ".swatchbin").c_str(), a.data(), a.size()) &&
                g_api->set_file(g_mod, (dir + file + "_Large.swatchbin").c_str(), b.data(), b.size());
     };
@@ -1602,7 +1727,7 @@ std::string key_picture(const std::wstring& button, bool driving) {
         {L"LB", {"PreviousTab"}, {}},
         {L"RB", {"NextTab"}, {}},
         {L"DPadUp", {"Up"}, {}},
-        {L"DPadDown", {"Down"}, {}},
+        {L"DPadDown", {"Down"}, {"Telemetry"}},
         {L"DPadLeft", {"Left"}, {"RadioPrevious"}},
         {L"DPadRight", {"Right"}, {"RadioNext"}},
         {L"DPadUpDown", {"Up", "Down"}, {}},
@@ -1663,7 +1788,10 @@ uint8_t* find_icon_for(void* element, uint8_t* name, bool driving, float* aspect
                     button.resize(button.size() - len);
                 }
             }
-            std::string file = key_picture(button, driving);
+            // The telemetry's help bar, made while driving: its d-pad is the driving keys'.
+            std::string file;
+            if (!driving && !g_in_menu.load() && !button.compare(0, 4, L"DPad")) file = key_picture(button, true);
+            if (file.empty()) file = key_picture(button, driving);
             if (!file.empty()) {
                 const float a = key_aspect(file);
                 if (a > 1 && !aspect) file += "_Sq";
@@ -2398,10 +2526,11 @@ const char* focus_name() {
     return f ? rtti_name(f) : "";
 }
 
-// A menu page has the focus (not the driving HUD's window).
+// A menu page has the focus (not the driving HUD's window). The telemetry takes the focus too,
+// but it's shown while driving: the driving keys drive, and close it and turn its pages.
 bool in_menu() {
     const char* n = focus_name();
-    return *n && std::strcmp(n, ".?AVUIWindow@@") != 0;
+    return *n && std::strcmp(n, ".?AVUIWindow@@") != 0 && std::strcmp(n, ".?AVTelemetry@@") != 0;
 }
 
 // Screens with nothing to point at, where any click is A: the title screen, videos, the wheelspin.
@@ -2450,19 +2579,30 @@ float stick(float pixels, float per_pixel) { return std::max(-1.f, std::min(1.f,
 void photo_input(void* cam) {
     o_photo_input(cam);
     auto* c = static_cast<uint8_t*>(cam);
-    const float lx = take(g_photo_look_x), ly = take(g_photo_look_y);
-    const float mx = take(g_photo_move_x), my = take(g_photo_move_y);
-    static FrameClock clock;
-    const float dt = clock.tick(), k = 0.05f * kTunedDt / dt;
-    // The wheel's zoom, held for its time: the last frame of it only partly.
-    float z = g_photo_zoom.load(), zoom = 0;
-    if (z) {
-        const float step = std::min(std::abs(z), dt);
-        zoom = (z > 0 ? 1 : -1) * step / dt;
-        if (!g_photo_zoom.compare_exchange_strong(z, z > 0 ? z - step : z + step)) zoom = 0;
+    // The mouse's share of a frame, worked out once a frame and given to every camera that asks:
+    // in the Autoshow two read the input each frame (an idle one first), and the first would
+    // take it all from the one on screen.
+    static uint32_t frame = ~0u;
+    static float look[2], move[2], zoom;
+    if (const uint32_t now = g_input_frame.load(); !now || now != frame) {
+        frame = now;
+        const float lx = take(g_photo_look_x), ly = take(g_photo_look_y);
+        const float mx = take(g_photo_move_x), my = take(g_photo_move_y);
+        static FrameClock clock;
+        const float dt = clock.tick(), k = 0.05f * kTunedDt / dt;
+        look[0] = stick(lx, k), look[1] = stick(ly, k);
+        move[0] = stick(mx, k), move[1] = stick(my, k);
+        // The wheel's zoom, held for its time: the last frame of it only partly.
+        float z = g_photo_zoom.load();
+        zoom    = 0;
+        if (z) {
+            const float step = std::min(std::abs(z), dt);
+            zoom = (z > 0 ? 1 : -1) * step / dt;
+            if (!g_photo_zoom.compare_exchange_strong(z, z > 0 ? z - step : z + step)) zoom = 0;
+        }
     }
-    if (lx || ly) f32(c, PHOTO_LOOK_X) -= stick(lx, k), f32(c, PHOTO_LOOK_Y) -= stick(ly, k);
-    if (mx || my) f32(c, PHOTO_MOVE_X) -= stick(mx, k), f32(c, PHOTO_MOVE_Y) -= stick(my, k);
+    if (look[0] || look[1]) f32(c, PHOTO_LOOK_X) -= look[0], f32(c, PHOTO_LOOK_Y) -= look[1];
+    if (move[0] || move[1]) f32(c, PHOTO_MOVE_X) -= move[0], f32(c, PHOTO_MOVE_Y) -= move[1];
     if (zoom) f32(c, PHOTO_ZOOM) += zoom;
     if (g_photo_keys.load()) {
         f32(c, PHOTO_MOVE_X) += key_axis('S', 'W');   // 0x1F0 is forward/back
@@ -2872,20 +3012,20 @@ using ButtonStateFn = int (*)(void* input, int context, int control, uint8_t a);
 ButtonStateFn o_dbg_state = nullptr;
 int dbg_state(void* input, int context, int control, uint8_t a) {
     const int v = o_dbg_state(input, context, control, a);
-    if (v) log_analog("state", context, control, static_cast<float>(v), __builtin_return_address(0));
+    if (v) log_analog("state", context, control, static_cast<float>(v), RETURN_ADDRESS());
     return v;
 }
 // The pad's buttons as 0..1 (the triggers, the handbrake): the keyboard's driving keys go in here.
 float get_digital(void* input, int context, int control) {
     const float v = o_get_digital(input, context, control);
-    if (v != 0.f && g_cfg.debug) log_analog("digital", context, control, v, __builtin_return_address(0));
-    return with_keys(v, input, context, control);
+    if (v != 0.f && g_cfg.debug) log_analog("digital", context, control, v, RETURN_ADDRESS());
+    return std::max(with_keys(v, input, context, control), look_value(input, context, control));
 }
 
 float get_analog(void* input, int context, int control) {
     const float v = with_keys(o_get_analog(input, context, control), input, context, control);
     if (v != 0.f && g_cfg.debug && !(context == 7 && (control == kDecalX || control == kDecalY)))
-        log_analog("analog", context, control, v, __builtin_return_address(0));
+        log_analog("analog", context, control, v, RETURN_ADDRESS());
     if (context == 7 && (control == kCamX || control == kCamY)) {
         const float d = control == kCamX ? g_cam_stick_x.load() : g_cam_stick_y.load();
         if (d) return std::max(-1.f, std::min(1.f, v + d));
@@ -2910,8 +3050,6 @@ void photo_frame() {
 // With the keys on and no pad there, the keyboard plays on instead: the page isn't shown. Once
 // a pad is plugged in it is, so that pad's A pairs it to the profile again.
 constexpr uintptr_t RVA_SHOW_PAIRING = 0xB620C0;
-constexpr uintptr_t RVA_INPUTS       = 0x365D7C8;   // the players' inputs, 0x1300 apart from +0x10
-constexpr uintptr_t INPUTS_DEVICE    = 0x70;        // in each: its pad, or null
 
 bool any_pad() {
     uint8_t* inputs = at<uint8_t*>(g_base, RVA_INPUTS);
@@ -2952,6 +3090,23 @@ uintptr_t pad_lost_pause(void* self, void* event) {
     return g_keyboard && !any_pad() ? 0 : o_pad_lost_pause(self, event);
 }
 
+// Photo mode (P while driving, the Autoshow's "Take photo") starts only for a profile with a pad:
+// it asks the profile for its input with CGamerProfile's vtable +0x58 (0x124A9F0), which is null
+// for a profile no pad was ever paired to, and then asks for a pad instead (which show_pairing
+// keeps away), so nothing happens. The other ask (+0x50, 0x124A7D0) answers the current input
+// then (the inputs' +0xAB28). With the keys on and no pad, this one answers it too: the input the
+// keys feed.
+constexpr uintptr_t RVA_PROFILE_INPUT = 0x124A9F0;
+using ProfileInputFn = void* (*)(void* profile, uint8_t flag);
+ProfileInputFn o_profile_input = nullptr;
+
+void* profile_input(void* profile, uint8_t flag) {
+    void* input = o_profile_input(profile, flag);
+    if (input || !g_keyboard || any_pad()) return input;
+    uint8_t* inputs = at<uint8_t*>(g_base, RVA_INPUTS);
+    return inputs ? at<void*>(inputs, INPUTS_CURRENT) : nullptr;
+}
+
 void show_pairing(void* manager, uint8_t show, uint8_t flag) {
     if (show && g_keyboard && !any_pad()) {
         static DWORD told = 0;
@@ -2962,11 +3117,11 @@ void show_pairing(void* manager, uint8_t show, uint8_t flag) {
 }
 
 void keyboard_frame() {
+    const bool menu = in_menu();
+    g_in_menu       = menu;   // free look needs it too
     if (!g_keyboard) return;
     HWND h           = g_hwnd.load();
     const bool front = h && GetForegroundWindow() == h;
-    const bool menu  = in_menu();
-    g_in_menu        = menu;
     static float repeat[kActionCount] = {};   // seconds to the next repeat
     static bool down[kActionCount]    = {};   // its key is down, wherever we are
     for (int i = 0; i < kActionCount; ++i) {
@@ -2983,8 +3138,11 @@ void keyboard_frame() {
         down[i]            = now;
         const bool here    = a.menu == menu;
         static bool armed[kActionCount] = {};
-        armed[i]  = now && here && (armed[i] || pressed);
-        g_held[i] = now && here && (!a.pad || armed[i]);
+        static DWORD until[kActionCount] = {};   // held at least till then (min_ms)
+        armed[i] = now && here && (armed[i] || pressed);
+        if (pressed && here && a.min_ms) until[i] = GetTickCount() + a.min_ms;
+        if (until[i] && static_cast<LONG>(until[i] - GetTickCount()) <= 0) until[i] = 0;
+        g_held[i] = (now && here && (!a.pad || armed[i])) || (here && until[i]);
         if (!here || !now) continue;
         if (pressed) {
             if (g_cfg.debug) logf("key %s", a.name);
@@ -3007,6 +3165,7 @@ void keyboard_frame() {
 void map_frame_guarded() {
     __try {
         keyboard_frame();
+        look_frame();
         icons_frame();
         photo_frame();
         debug_frame();
@@ -3048,6 +3207,7 @@ void detour_update(void* self, float dt) {
         }
         g_batch.clear();
         cam_frame_begin();
+        plugin_buttons();
     }
     o_update(self, dt);
 }
@@ -3242,6 +3402,15 @@ DWORD WINAPI start(LPVOID) {
         g_api->enable_hooks(g_mod, nullptr);
     else
         o_show_pairing = nullptr, logf("the controller pairing page isn't as expected: it shows when a pad goes");
+    // Photo mode without a pad: optional.
+    static const uint8_t profile_input_bytes[] = {0x40, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x48, 0xC7, 0x44, 0x24, 0x20, 0xFE,
+                                                  0xFF, 0xFF, 0xFF, 0x48, 0x89, 0x5C, 0x24, 0x48, 0x0F, 0xB6, 0xDA};
+    if (o_show_pairing && !std::memcmp(g_base + RVA_PROFILE_INPUT, profile_input_bytes, sizeof profile_input_bytes) &&
+        g_api->hook_function(g_mod, "profile's input", g_base + RVA_PROFILE_INPUT, reinterpret_cast<void*>(&profile_input),
+                             reinterpret_cast<void**>(&o_profile_input)))
+        g_api->enable_hooks(g_mod, nullptr);
+    else
+        logf("the profile's input isn't as expected: without a pad, photo mode doesn't start");
     // The bytes before the call: cmp byte [rbx+4], 0 / jne / lea rdx, [rdi+0x28] / mov rcx, rdi.
     static const uint8_t pause_bytes[] = {0x80, 0x7B, 0x04, 0x00, 0x75, 0x0C, 0x48, 0x8D, 0x57, 0x28, 0x48, 0x8B, 0xCF, 0xE8};
     if (o_show_pairing && !std::memcmp(g_base + RVA_PAD_LOST_PAUSE - 13, pause_bytes, sizeof pause_bytes) &&
@@ -3280,12 +3449,13 @@ DWORD WINAPI start(LPVOID) {
         g_api->enable_hooks(g_mod, nullptr);
     else
         o_garage_camera = nullptr, logf("the garage camera isn't as expected: no wheel zoom there");
-    // Photo mode's camera: optional, the rest works without it.
-    void** photo_slot = reinterpret_cast<void**>(g_base + RVA_PHOTO_INPUT_SLOT);
+    // Photo mode's camera: optional, the rest works without it. The function, not CCamPhotoMode's
+    // vtable slot: the Autoshow's photo mode camera (CUIPhotoModeCamera) has it in its own vtable.
     static const uint8_t photo_bytes[] = {0x40, 0x53, 0x48, 0x83, 0xEC, 0x40, 0x80, 0xB9, 0x2C, 0x02, 0x00, 0x00};
-    if (*photo_slot == g_base + RVA_PHOTO_INPUT && !std::memcmp(g_base + RVA_PHOTO_INPUT, photo_bytes, sizeof photo_bytes) &&
-        g_api->hook_pointer(g_mod, "CCamPhotoMode input", photo_slot, reinterpret_cast<void*>(&photo_input),
-                            reinterpret_cast<void**>(&o_photo_input)))
+    if (at<uint8_t*>(g_base, RVA_PHOTO_INPUT_SLOT) == g_base + RVA_PHOTO_INPUT &&
+        !std::memcmp(g_base + RVA_PHOTO_INPUT, photo_bytes, sizeof photo_bytes) &&
+        g_api->hook_function(g_mod, "photo mode camera input", g_base + RVA_PHOTO_INPUT, reinterpret_cast<void*>(&photo_input),
+                             reinterpret_cast<void**>(&o_photo_input)))
         g_api->enable_hooks(g_mod, nullptr);
     else
         logf("photo mode's camera isn't as expected: no mouse there");

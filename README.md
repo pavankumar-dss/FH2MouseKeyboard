@@ -25,6 +25,8 @@ On screens with nothing to point at (the title screen, videos, the wheelspin), a
 
 **Garage and design editor:** drag on empty space to turn the camera, wheel to zoom. In *Design editor → Edit layer*, **W A S D** move the layer (and size, spin or skew it on those tabs).
 
+**Driving:** move the mouse left / right to look around (the right stick); a moment after you stop, the camera turns back ahead. While you drive the mouse stays in the game window (Alt+Tab to leave it); `FreeLook=0` turns this off.
+
 **Photo mode:** left drag to turn the camera, **W A S D** to move it, **Q / E** down / up, wheel to zoom, right click to exit.
 
 The cursor hides by itself a few seconds after you stop moving the mouse, and comes back when you move it.
@@ -44,7 +46,8 @@ The cursor hides by itself a few seconds after you stop moving the mouse, and co
 | R | Rewind | |
 | M | Map | |
 | P | Photo mode | |
-| , / . | Previous / next radio station | |
+| T | Telemetry on / off | |
+| , / . | Previous / next radio station (or telemetry page) | |
 | Left Ctrl | Nitro, with the [FnFNitro](https://github.com/qiangqiang101/NitroSystem) mod installed | |
 | E | Horn, with the HonkHonk mod installed | |
 | Esc | Pause | B (back) |
@@ -88,10 +91,11 @@ To remove it, delete `fh2-mods\FH2Mouse.dll` and the `FH2Mouse` folder.
 | `Enabled` | `1` | `0` turns the mod off |
 | `HoverSelects` | `1` | Moving over something selects it. With `0`, only clicks do |
 | `HideAfterSeconds` | `3` | Hide the cursor after this long without moving the mouse (`0` = never) |
+| `FreeLook` | `1` | While driving, the mouse looks around. `0` leaves the mouse alone while driving |
 | `FrameRate` | `0` | The game's frame rate: `0` measures it (`platform.log` says what it found). Set it (`30`, `60`, `120`, `144`...) only if photo mode or the garage camera turns too fast or too slow |
 | `Debug` | `0` | Log what's under the cursor and every click to `fh2-mods\platform.log` |
 
-The `[Keyboard]` section (added to an older ini the first time this version starts) gives each action one or more keys, separated by spaces: `Gas=W Up`, `LookLeft=Q`, `Map=None`. Keys are letters, digits, `F1`-`F24`, `Num0`-`Num9` (with Num Lock on), `Left` `Right` `Up` `Down`, `Space`, `Enter`, `Escape`, `Tab`, `Backspace`, `Insert`, `Delete`, `Home`, `End`, `PageUp`, `PageDown`, `Shift`/`LShift`/`RShift`, `Ctrl`/`LCtrl`/`RCtrl`, `Alt`/`LAlt`/`RAlt`, `Comma`, `Period`, `Minus`, `Equals`, `Semicolon`, `Slash`, `Grave`, `LBracket`, `Backslash`, `RBracket`, `Quote`, or a virtual-key code (`0xNN`). The actions are `Gas`, `Brake`, `SteerLeft`, `SteerRight`, `Handbrake`, `ShiftUp`, `ShiftDown`, `Clutch`, `Camera`, `LookBack`, `LookLeft`, `LookRight`, `Rewind`, `Map`, `PhotoMode`, `RadioPrevious`, `RadioNext`, `Interact`, `Nitro` and `Pause` while driving, and `Accept`, `Back`, `Up`, `Down`, `Left`, `Right`, `PreviousTab`, `NextTab`, `ButtonX`, `ButtonY`, `ButtonView`, `ButtonLT`, `ButtonRT`, `ButtonLS` and `ButtonRS` in the menus. The MODS page offers the usual keys; one set in the ini that isn't among them shows there as it is. `Enabled=0` turns the keys off. `KeyIcons=0` keeps the controller's buttons in the help bar while you play with the keyboard.
+The `[Keyboard]` section (added to an older ini the first time this version starts) gives each action one or more keys, separated by spaces: `Gas=W Up`, `LookLeft=Q`, `Map=None`. Keys are letters, digits, `F1`-`F24`, `Num0`-`Num9` (with Num Lock on), `Left` `Right` `Up` `Down`, `Space`, `Enter`, `Escape`, `Tab`, `Backspace`, `Insert`, `Delete`, `Home`, `End`, `PageUp`, `PageDown`, `Shift`/`LShift`/`RShift`, `Ctrl`/`LCtrl`/`RCtrl`, `Alt`/`LAlt`/`RAlt`, `Comma`, `Period`, `Minus`, `Equals`, `Semicolon`, `Slash`, `Grave`, `LBracket`, `Backslash`, `RBracket`, `Quote`, or a virtual-key code (`0xNN`). The actions are `Gas`, `Brake`, `SteerLeft`, `SteerRight`, `Handbrake`, `ShiftUp`, `ShiftDown`, `Clutch`, `Camera`, `LookBack`, `LookLeft`, `LookRight`, `Rewind`, `Map`, `PhotoMode`, `RadioPrevious`, `RadioNext`, `Telemetry`, `Interact`, `Nitro` and `Pause` while driving, and `Accept`, `Back`, `Up`, `Down`, `Left`, `Right`, `PreviousTab`, `NextTab`, `ButtonX`, `ButtonY`, `ButtonView`, `ButtonLT`, `ButtonRT`, `ButtonLS` and `ButtonRS` in the menus. The MODS page offers the usual keys; one set in the ini that isn't among them shows there as it is. `Enabled=0` turns the keys off. `KeyIcons=0` keeps the controller's buttons in the help bar while you play with the keyboard.
 
 The key pictures are built into `FH2Mouse.dll`: one PNG per key, named as the ini names keys (`Enter.png`, `Escape.png`, `PageUp.png`, `A.png`; `UpDown.png` and `LeftRight.png` for the d-pad's both-ways pictures). A key without one, like a key the ini sets that the MODS page doesn't offer, is drawn. To use a picture of your own, put a PNG with that name in `FH2Mouse\KeyIcons` (any size, with transparency); the game shows it from its next start, and deleting it brings back the built-in one. A picture can be up to four times as wide as it is high, like the built-in Enter, Space and Shift: the help bar makes room for it, and where a page only has a square for the button (the title screen's PRESS (A) TO START, the HUD's prompts, the tab strips' LB / RB) it's shrunk to fit the square. The game's copies are made from them each start, in `mediaoverride\UI\textures\data_bound\FH2MouseKeys`, so don't edit those.
 
@@ -99,7 +103,6 @@ The keys' rows need FH2 Mod Platform 2.8.0 or later (the one in the release zip)
 
 ## Known limits
 
-- **"Ⓨ Change time"** in the pause menu comes from the *Extra Options – Weather Control* plugin, which reads the controller directly, so clicking it does nothing. Give the plugin a keyboard key (`ChangeTimeKeyboard` in its `EO_WeatherControl.ini`) to change the time without a controller.
 - The design editor's *Advanced camera* (right stick click) can't be held with the mouse.
 - Only the 24 November 2015 build of the game that everyone plays is supported. On anything else the mod checks the game's code, finds it different, and stays off (it says so in `platform.log`).
 
