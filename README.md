@@ -46,6 +46,7 @@ The cursor hides by itself a few seconds after you stop moving the mouse, and co
 | P | Photo mode | |
 | , / . | Previous / next radio station | |
 | Left Ctrl | Nitro, with the [FnFNitro](https://github.com/qiangqiang101/NitroSystem) mod installed | |
+| E | Horn, with the HonkHonk mod installed | |
 | Esc | Pause | B (back) |
 | Enter | Enter garage (and the HUD's other prompts) | A (select) |
 | Page Up / Page Down | | Previous / next tab (LB / RB) |
@@ -56,7 +57,7 @@ The cursor hides by itself a few seconds after you stop moving the mouse, and co
 
 While you play with the keyboard, the help bar and the HUD's prompts show the keys instead of the controller's buttons: "Enter Select", "Esc Back", "PgUp" / "PgDn" for the tabs. Press a button on the controller and its buttons come back; press a key and the keys do. The pictures show the keys you've set, so they follow your changes. A button with no key (moving the sticks, or one you set to None) keeps the controller's picture.
 
-The driving keys go straight to the game's own controls, not through a pretend controller, and only while you're driving, so a key can do one thing while driving and another in the menus. W in photo mode still moves the photo camera. The menu keys, Esc's pause and the radio keys hold the pad's own buttons for the game, so the menus take them exactly as they take a pad's. No controller needs to be plugged in: Enter on the title screen signs you in without one. If a controller goes (unplugged, or its batteries run out) the keyboard plays on: no "Controller disconnected" message and no pause. Plug a pad back in and the game asks for its A, as usual, to pair it again. Look left / right can have keys too. With FnFNitro installed, Left Ctrl presses its nitro button (whichever its `NitroButton` is) for it alone: the game doesn't see it, and no controller is needed.
+The driving keys go straight to the game's own controls, not through a pretend controller, and only while you're driving, so a key can do one thing while driving and another in the menus. W in photo mode still moves the photo camera. The menu keys, Esc's pause and the radio keys hold the pad's own buttons for the game, so the menus take them exactly as they take a pad's. No controller needs to be plugged in: Enter on the title screen signs you in without one. If a controller goes (unplugged, or its batteries run out) the keyboard plays on: no "Controller disconnected" message and no pause. Plug a pad back in and the game asks for its A, as usual, to pair it again. Look left / right can have keys too. With FnFNitro installed, Left Ctrl presses its nitro button (whichever its `NitroButton` is) for it alone: the game doesn't see it, and no controller is needed. With HonkHonk installed, E honks its horn the same way, on whichever stick its horn button is (the left one, or the right one when FH2MP moves it there).
 
 Every key can be changed in the game, in **Pause > Settings > MODS**: each action has a "Key:" row, and left / right picks its key. The change takes effect at once. "Keyboard controls" there turns the keys off, and "Keyboard icons" keeps the controller's buttons in the help bar. The same keys are in the ini's `[Keyboard]` section, which takes any key and more than one per action.
 

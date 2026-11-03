@@ -211,6 +211,8 @@ const Action kActions[] = {
     {"Interact", "Enter garage (prompts)", "Enter", 21, 1, 0, false},
     // FnFNitro's nitro (its own mod, which reads the pad's nitro button itself): see "FnFNitro".
     {"Nitro", "Nitro (FnFNitro)", "LCtrl", -1, 0, 0, false},
+    // HonkHonk's horn (its own mod too, reading a stick's click itself): see "HonkHonk".
+    {"Horn", "Horn (HonkHonk)", "E", -1, 0, 0, false},
     // The menu's keys hold the pad's buttons too (Start, A, B, the d-pad), so every menu takes them
     // as it takes the pad's; the key is what's pressed instead if that can't be done.
     {"Pause", "Pause", "Escape", -1, 0, KEY_PAUSE, false, 0x10ull},
@@ -382,9 +384,12 @@ void add_keyboard_rows() {
     static std::string keys[kActionCount], labels[kActionCount];
     const bool nitro = GetFileAttributesW((std::wstring(g_api->azimuth_dir) + L"\\fh2-mods\\FnFNitro.dll").c_str()) !=
                        INVALID_FILE_ATTRIBUTES;
+    const bool horn = GetFileAttributesW((std::wstring(g_api->azimuth_dir) + L"\\fh2-mods\\HonkHonk.dll").c_str()) !=
+                      INVALID_FILE_ATTRIBUTES;
     for (int i = 0; i < kActionCount; ++i) {
         const Action& a = kActions[i];
         if (!std::strcmp(a.name, "Nitro") && !nitro) continue;
+        if (!std::strcmp(a.name, "Horn") && !horn) continue;
         auto& choices   = g_row_choices[i];
         int value       = -1;
         for (const char* c : kKeyChoices) {
@@ -959,8 +964,10 @@ std::array<std::atomic<bool>, kActionCount> g_held{};   // set once a UI frame
 struct Edge {
     uint32_t id = 0;   // counts presses
     DWORD at    = 0;   // GetTickCount of the last
+    uint32_t used = 0;   // the press the game took (Consume), which no one else sees
     const void* from[8] = {};
     uint32_t told[8]    = {};
+    uint32_t frame[8]   = {};   // the game frame it was told in
 };
 Edge g_edges[kControls];   // by control, guarded by g_edge_mx
 std::mutex g_edge_mx;
@@ -1011,9 +1018,11 @@ void set_dpad(uint8_t* state, uint64_t bits) {
 }
 using InputUpdateFn = uintptr_t (*)(void* inputs, float dt);
 InputUpdateFn o_input_update = nullptr;
+std::atomic<uint32_t> g_input_frame{0};   // counts the game's input updates (0: not hooked)
 
 uintptr_t input_update(void* inputs, float dt) {
     const uintptr_t r = o_input_update(inputs, dt);
+    ++g_input_frame;
     uint8_t* in       = g_player.load();
     if (!in) return r;
     uint64_t& buttons = *reinterpret_cast<uint64_t*>(in + INPUT_BUTTONS);
@@ -1056,20 +1065,39 @@ float with_keys(float v, void* input, int context, int control) {
     return k ? std::max(-1.f, std::min(1.f, v + k)) : v;
 }
 
-// A key's press, to each place in the game's code that asks within a moment of it, once.
+// A key's press, to each place in the game's code that asks within a moment of it, once: for
+// the game frame that place is first told in, as a pad's press is pressed for a frame. One place
+// can ask for many: every HUD module's prompts (0x78B6E0, HUDModule's slot 5: the garage's
+// "Enter garage", the notifications' "Join session") ask from 0x78B74A, one after another, and
+// the one that takes the press consumes it (Consume(input, context, control), 0x106D640), so the
+// rest don't see it, as with the pad.
+constexpr uintptr_t RVA_CONSUME = 0x106D640;
+using ConsumeFn = void (*)(void* input, int context, int control);
+ConsumeFn o_consume = nullptr;
+
 bool key_pressed(void* input, int context, int control, const void* from) {
     if (!driving(input, context, control)) return false;
     std::lock_guard<std::mutex> lock(g_edge_mx);
     Edge& e = g_edges[control];
-    if (!e.id || GetTickCount() - e.at > 250) return false;
+    if (!e.id || e.used == e.id || GetTickCount() - e.at > 250) return false;
+    const uint32_t frame = g_input_frame.load();
     for (int i = 0; i < 8; ++i) {
         if (e.from[i] && e.from[i] != from) continue;
         e.from[i] = from;
-        if (e.told[i] == e.id) return false;
-        e.told[i] = e.id;
+        if (e.told[i] == e.id) return frame && o_consume && e.frame[i] == frame;
+        e.told[i]  = e.id;
+        e.frame[i] = frame;
         return true;
     }
     return false;
+}
+
+void consume(void* input, int context, int control) {
+    if (context == kDriving && control >= 0 && control < kControls) {
+        std::lock_guard<std::mutex> lock(g_edge_mx);
+        g_edges[control].used = g_edges[control].id;
+    }
+    o_consume(input, context, control);
 }
 
 // ---- the help bar ---------------------------------------------------------------------------------
@@ -3084,8 +3112,8 @@ DWORD WINAPI nitro_xinput(DWORD port, XINPUT_STATE* state) {
     return r;
 }
 
-// FnFNitro's import of XInputGetState (by name, or xinput1_4's ordinal 2), or null.
-void** nitro_xinput_slot(HMODULE m) {
+// A mod's import of XInputGetState (by name, or xinput1_4's ordinal 2), or null.
+void** xinput_slot(HMODULE m) {
     auto* base = reinterpret_cast<uint8_t*>(m);
     auto* dos  = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
     auto* nt   = reinterpret_cast<IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
@@ -3111,12 +3139,42 @@ void hook_nitro() {
         if (!std::strcmp(kActions[i].name, "Nitro")) g_nitro_action = i;
     HMODULE m = GetModuleHandleW(L"FnFNitro.dll");
     if (!m || !g_keyboard) return;
-    void** slot = nitro_xinput_slot(m);
+    void** slot = xinput_slot(m);
     if (slot && g_api->hook_pointer(g_mod, "FnFNitro: XInputGetState", slot, reinterpret_cast<void*>(&nitro_xinput),
                                     reinterpret_cast<void**>(&o_nitro_xinput)))
         g_api->enable_hooks(g_mod, nullptr), logf("FnFNitro is here: the Nitro key boosts");
     else
         logf("FnFNitro is here, but its pad reading isn't as expected: no Nitro key");
+}
+
+// ---- HonkHonk ----------------------------------------------------------------------------------
+// HonkHonk (fh2-mods\HonkHonk.dll) honks while the pad's left stick is clicked in, read with its
+// own XInputGetState (xinput1_4's ordinal 2). FH2MP moves it to the right stick when Extra
+// Options doesn't use that one, by changing HonkHonk's code. FH2Mouse answers that import as it
+// does FnFNitro's: while the Horn key is held, port 0 has both sticks clicked in, so it honks on
+// whichever it's on, and the game doesn't see it.
+XInputGetStateFn o_horn_xinput = nullptr;
+int g_horn_action = -1;
+
+DWORD WINAPI horn_xinput(DWORD port, XINPUT_STATE* state) {
+    DWORD r = o_horn_xinput(port, state);
+    if (port != 0 || !state || !g_keyboard || g_horn_action < 0 || !g_held[g_horn_action].load()) return r;
+    if (r != ERROR_SUCCESS) std::memset(state, 0, sizeof *state), r = ERROR_SUCCESS;
+    state->Gamepad.wButtons |= XINPUT_GAMEPAD_LEFT_THUMB | XINPUT_GAMEPAD_RIGHT_THUMB;
+    return r;
+}
+
+void hook_horn() {
+    for (int i = 0; i < kActionCount; ++i)
+        if (!std::strcmp(kActions[i].name, "Horn")) g_horn_action = i;
+    HMODULE m = GetModuleHandleW(L"HonkHonk.dll");
+    if (!m || !g_keyboard) return;
+    void** slot = xinput_slot(m);
+    if (slot && g_api->hook_pointer(g_mod, "HonkHonk: XInputGetState", slot, reinterpret_cast<void*>(&horn_xinput),
+                                    reinterpret_cast<void**>(&o_horn_xinput)))
+        g_api->enable_hooks(g_mod, nullptr), logf("HonkHonk is here: the Horn key honks");
+    else
+        logf("HonkHonk is here, but its pad reading isn't as expected: no Horn key");
 }
 
 DWORD WINAPI start(LPVOID) {
@@ -3155,6 +3213,14 @@ DWORD WINAPI start(LPVOID) {
         g_api->enable_hooks(g_mod, nullptr);
     else
         o_get_digital = nullptr, logf("the game's input isn't as expected: no keys for driving");
+    // A prompt taking the press: optional (without it, the HUD's other prompts miss the key's).
+    static const uint8_t consume_bytes[] = {0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18};
+    if (o_get_digital && !std::memcmp(g_base + RVA_CONSUME, consume_bytes, sizeof consume_bytes) &&
+        g_api->hook_function(g_mod, "input Consume", g_base + RVA_CONSUME, reinterpret_cast<void*>(&consume),
+                             reinterpret_cast<void**>(&o_consume)))
+        g_api->enable_hooks(g_mod, nullptr);
+    else
+        o_consume = nullptr, logf("the input's consume isn't as expected: the keys' prompts go to the first that asks");
     // Signing in without a pad: pressing A on the title screen signs in the user of the pad that
     // pressed it (0xE7EBC0) and, with no pad, gives up ("Sign in needed") instead of asking the
     // account picker (0xD08BD0, which takes no pad, as the pairing page's use of it shows, and
@@ -3224,6 +3290,7 @@ DWORD WINAPI start(LPVOID) {
     else
         logf("photo mode's camera isn't as expected: no mouse there");
     hook_nitro();
+    hook_horn();
     hook_key_icons();   // last: it enables what it hooked only when all of it is
     g_arrow = LoadCursorW(nullptr, IDC_ARROW);
     if (HANDLE t = CreateThread(nullptr, 0, window_thread, nullptr, 0, nullptr)) CloseHandle(t);
