@@ -4,6 +4,10 @@ A mouse cursor and keyboard controls for **Forza Horizon 2** on PC (Azimuth). Dr
 
 FH2 Mouse & Keyboard (FH2Mouse) is a mod for the [FH2 Mod Platform](https://github.com/Trinculo54/fh2-mod-platform).
 
+<img width="1280" height="720" alt="pause" src="https://github.com/user-attachments/assets/5014c57a-c740-4189-9c2c-3a0375104ac2" />
+<img width="1024" height="576" alt="ezgif-resized (1)" src="https://github.com/user-attachments/assets/faffd9a9-419f-4273-aaa5-a6df274df381" />
+<img width="1280" height="720" alt="decal" src="https://github.com/user-attachments/assets/8651ffc6-10d4-47ae-bc99-a5ecedf0d5ac" />
+
 ## Controls
 
 **Everywhere in the menus**
