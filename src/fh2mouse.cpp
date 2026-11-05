@@ -174,6 +174,7 @@ struct Settings {
     DWORD hide_ms     = 3000;   // the cursor hides this long after the mouse last moved (0: never)
     bool debug        = false;  // log what's under the cursor
     bool free_look    = true;   // the mouse looks around while driving
+    std::atomic<int> look_percent{50};    // ... this fast: 0 to 100, 50 is kLookPerPixel (100 twice that)
     int frame_rate    = 0;      // the game's frame rate, if measuring it goes wrong (0: measure)
 } g_cfg;
 
@@ -194,6 +195,7 @@ struct Action {
     bool menu;           // counts in the menus (else while driving)
     uint64_t pad = 0;    // the pad's own buttons it holds, for what doesn't ask by control
     DWORD min_ms = 0;    // a press holds them at least this long, for what wants them held
+    const char* extra = nullptr;   // Extra Options' binding it presses (see "Extra Options' keys")
 };
 const Action kActions[] = {
     {"Gas", "Gas", "W", 0, 1, 0, false},
@@ -224,6 +226,12 @@ const Action kActions[] = {
     {"Nitro", "Nitro (FnFNitro)", "LCtrl", -1, 0, 0, false},
     // HonkHonk's horn (its own mod too, reading a stick's click itself): see "HonkHonk".
     {"Horn", "Horn (HonkHonk)", "E", -1, 0, 0, false},
+    // Extra Options' blinkers and lights, on whatever pad buttons its ini binds them to. The
+    // indicators want a 0.5 s hold (shorter is the radio), so a tap holds them 0.65 s.
+    {"SignalLeft", "Left indicator", "LBracket", -1, 0, 0, false, 0, 650, "SignalLeft"},
+    {"SignalRight", "Right indicator", "RBracket", -1, 0, 0, false, 0, 650, "SignalRight"},
+    {"Hazards", "Hazard lights", "G", -1, 0, 0, false, 0, 0, "Hazards"},
+    {"Headlights", "Headlights", "L", -1, 0, 0, false, 0, 0, "Headlights"},
     // The menu's keys hold the pad's buttons too (Start, A, B, the d-pad), so every menu takes them
     // as it takes the pad's; the key is what's pressed instead if that can't be done.
     {"Pause", "Pause", "Escape", -1, 0, KEY_PAUSE, false, 0x10ull},
@@ -251,6 +259,8 @@ constexpr int kActionCount = sizeof kActions / sizeof kActions[0];
 constexpr int kMaxKeys     = 4;
 bool g_keyboard            = true;
 bool g_key_icons_on        = true;   // the help bar shows the keys while they're used (see "Key icons")
+bool g_extra_options       = false;  // Extra Options' ini is there (see "Extra Options' keys")
+bool g_kbm_rows            = false;  // the rows are on the Mods page (API 9), for Settings > Keyboard & Mouse
 std::atomic<bool> g_icons_stale{false};   // the help bar on screen is to be shown again
 std::array<std::array<int, kMaxKeys>, kActionCount> g_action_keys{};   // virtual keys, 0 = none
 std::array<std::string, kActionCount> g_action_text;                   // as in the ini
@@ -313,7 +323,7 @@ void load_keys(const std::wstring& ini) {
     // Inis from before the keyboard get its section, so the keys can be found.
     wchar_t probe[4];
     if (!GetPrivateProfileSectionW(L"Keyboard", probe, 4, ini.c_str())) {
-        std::string text = "\r\n; Keys for driving and the menus (also on Pause > Settings > MODS). One or more keys\r\n"
+        std::string text = "\r\n; Keys for driving and the menus (also on Pause > Settings > Keyboard & Mouse). One or more keys\r\n"
                            "; each, separated by spaces: A-Z, 0-9, F1-F24, Num0-Num9 (with Num Lock on), Left, Right,\r\n"
                            "; Up, Down, Space, Enter, Escape, Tab, Backspace, Insert, Delete, Home, End, PageUp,\r\n"
                            "; PageDown, Shift, LShift, RShift, Ctrl, LCtrl, RCtrl, Alt, LAlt, RAlt, Comma, Period,\r\n"
@@ -343,14 +353,98 @@ void load_keys(const std::wstring& ini) {
     }
 }
 
-// ---- the keys on the Mods page (API 9) ----------------------------------------------------------
+// ---- the keys on the Keyboard & Mouse page (API 9) ----------------------------------------------
 // A choice row for each action: its key, from a list of the usual ones, or what the ini has if
-// that's something else. A change takes effect at once and goes to the ini.
+// that's something else. A change takes effect at once and goes to the ini. The rows are the
+// platform's Mods page rows, shown on a page of their own: see "Pause > Settings > Keyboard & Mouse".
+// The platform's choice rows take up to 32 choices, so each row has these 28, then its default,
+// the keys the presets give it, and what the ini has.
 const char* const kKeyChoices[] = {
     "None", "W", "A", "S", "D", "Q", "E", "R", "F", "C", "Z", "X", "M", "P", "Space", "Enter", "Escape", "Left",
-    "Right", "Up", "Down", "LShift", "RShift", "LCtrl", "RCtrl", "LAlt", "Tab", "PageUp", "PageDown", "Comma", "Period",
+    "Right", "Up", "Down", "LShift", "RShift", "LCtrl", "RCtrl", "Tab", "Comma", "Period",
 };
+constexpr std::size_t kMaxChoices = 32;
 std::array<std::vector<std::string>, kActionCount> g_row_choices;   // what each row offers
+std::vector<std::pair<std::string, std::string>> g_row_names;       // our rows: label, key
+
+// Presets: every action's keys at once. Each gives the keys that differ from kActions' defaults
+// (which are the second, the mod's own layout); picking one sets all of them. They're all
+// among kKeyChoices, so every row can show them. The QWERTZ and AZERTY ones keep the keys where
+// they are on a QWERTY keyboard (the left trigger on the key left of X, AZERTY's Z Q S D).
+struct PresetKey {
+    const char* action;
+    const char* keys;
+};
+struct Preset {
+    const char* name;
+    std::vector<PresetKey> keys;
+};
+const Preset kPresets[] = {
+    {"WASD drive",
+     {{"Gas", "W"}, {"Brake", "S"}, {"SteerLeft", "A"}, {"SteerRight", "D"}, {"ShiftUp", "E"}, {"ShiftDown", "Q"},
+      {"Clutch", "LShift"}, {"Horn", "H"}}},
+    {"WS drive, arrow steer", {}},
+    {"Arrow drive",
+     {{"Gas", "Up"}, {"Brake", "Down"}, {"SteerLeft", "Left"}, {"SteerRight", "Right"}, {"ShiftUp", "E"}, {"ShiftDown", "Q"},
+      {"Clutch", "LShift"}, {"Horn", "H"}}},
+    {"AZERTY",
+     {{"Gas", "Z"}, {"Brake", "S"}, {"SteerLeft", "Q"}, {"SteerRight", "D"}, {"ShiftUp", "E"}, {"ShiftDown", "A"},
+      {"Clutch", "LShift"}, {"Horn", "H"}, {"ButtonLT", "W"}}},
+    {"QWERTZ",
+     {{"Gas", "W"}, {"Brake", "S"}, {"SteerLeft", "A"}, {"SteerRight", "D"}, {"ShiftUp", "E"}, {"ShiftDown", "Q"},
+      {"Clutch", "LShift"}, {"Horn", "H"}, {"ButtonLT", "Y"}, {"ButtonY", "Z"}}},
+};
+constexpr int kPresetCount = sizeof kPresets / sizeof kPresets[0];   // and one more: "Custom"
+int g_preset = kPresetCount;                                        // the row's value (UI thread)
+
+const char* preset_keys(int p, int action) {
+    for (const PresetKey& k : kPresets[p].keys)
+        if (!std::strcmp(k.action, kActions[action].name)) return k.keys;
+    return kActions[action].keys;
+}
+
+// The preset the keys are, or kPresetCount (Custom). `prefer` first, when it's one.
+int matching_preset(int prefer) {
+    auto is = [](int p) {
+        for (int i = 0; i < kActionCount; ++i)
+            if (_stricmp(preset_keys(p, i), g_action_text[i].c_str())) return false;
+        return true;
+    };
+    if (prefer >= 0 && prefer < kPresetCount && is(prefer)) return prefer;
+    for (int p = 0; p < kPresetCount; ++p)
+        if (is(p)) return p;
+    return kPresetCount;
+}
+
+void refresh_row(const char* key);   // the open page shows the row's new value (see "Keyboard & Mouse")
+
+// A key row's value: its keys' place in its choices, or -1.
+int row_value(int i) {
+    for (std::size_t c = 0; c < g_row_choices[i].size(); ++c)
+        if (!_stricmp(g_row_choices[i][c].c_str(), g_action_text[i].c_str())) return static_cast<int>(c);
+    return -1;
+}
+
+void apply_preset(int p) {
+    for (int i = 0; i < kActionCount; ++i) {
+        if (!_stricmp(preset_keys(p, i), g_action_text[i].c_str())) continue;
+        set_action_keys(i, preset_keys(p, i));
+        WritePrivateProfileStringW(L"Keyboard", widen(kActions[i].name).c_str(), widen(g_action_text[i]).c_str(), g_ini.c_str());
+        const int v = row_value(i);
+        if (v < 0) continue;   // no row (Nitro, Horn without their mods)
+        const std::string key = std::string("Key_") + kActions[i].name;
+        g_api->set_setting(g_mod, key.c_str(), v);
+        refresh_row(key.c_str());
+    }
+    g_api->log(g_mod, (std::string("keys set to the ") + kPresets[p].name + " preset").c_str());
+}
+
+// The free look sensitivity slider: a change takes effect at once and goes to the ini.
+void look_speed_changed(void*, const char*, float value) {
+    const int percent = std::max(0, std::min(100, static_cast<int>(std::lround(value))));
+    g_cfg.look_percent = percent;
+    WritePrivateProfileStringW(L"Mouse", L"FreeLookSensitivity", std::to_wstring(percent).c_str(), g_ini.c_str());
+}
 
 void keyboard_row_changed(void*, const char* key, int value) {
     g_icons_stale = true;
@@ -364,26 +458,45 @@ void keyboard_row_changed(void*, const char* key, int value) {
         WritePrivateProfileStringW(L"Keyboard", L"KeyIcons", value ? L"1" : L"0", g_ini.c_str());
         return;
     }
+    if (!std::strcmp(key, "HoverSelects") || !std::strcmp(key, "FreeLook")) {
+        const bool hover = key[0] == 'H';
+        (hover ? g_cfg.hover_focus : g_cfg.free_look) = value != 0;
+        WritePrivateProfileStringW(L"Mouse", hover ? L"HoverSelects" : L"FreeLook", value ? L"1" : L"0", g_ini.c_str());
+        return;
+    }
+    if (!std::strcmp(key, "Preset")) {
+        g_preset = value;
+        if (value >= 0 && value < kPresetCount) apply_preset(value);   // Custom changes nothing
+        return;
+    }
     for (int i = 0; i < kActionCount; ++i) {
         if (std::strcmp(key, (std::string("Key_") + kActions[i].name).c_str())) continue;
         if (value < 0 || value >= static_cast<int>(g_row_choices[i].size())) return;
         set_action_keys(i, g_row_choices[i][value]);
         WritePrivateProfileStringW(L"Keyboard", widen(kActions[i].name).c_str(), widen(g_action_text[i]).c_str(),
                                    g_ini.c_str());
+        if (const int p = matching_preset(g_preset); p != g_preset) {   // Custom now, or another preset
+            g_preset = p;
+            g_api->set_setting(g_mod, "Preset", p);
+            refresh_row("Preset");
+        }
         return;
     }
 }
 
 void add_keyboard_rows() {
     if (g_api->api_version < 9) return;
+    auto add_row = [](const FH2Setting& s) {
+        if (g_api->add_setting(g_mod, &s)) g_row_names.emplace_back(s.label, s.key);
+    };
     FH2Setting on{};
     on.size        = sizeof on;
     on.key         = "Keyboard";
     on.label       = "Keyboard controls";
-    on.description = "Drive with the keyboard and move around the menus with it. The Key rows below set the keys.";
+    on.description = "Drive with the keyboard and move around the menus with it. The rows below set the keys.";
     on.value       = g_keyboard;
     on.on_change   = keyboard_row_changed;
-    g_api->add_setting(g_mod, &on);
+    add_row(on);
     FH2Setting icons{};
     icons.size        = sizeof icons;
     icons.key         = "KeyIcons";
@@ -391,7 +504,52 @@ void add_keyboard_rows() {
     icons.description = "While you play with the keyboard, the help bar shows its keys instead of the controller's buttons. A button on the controller brings the buttons back.";
     icons.value       = g_key_icons_on;
     icons.on_change   = keyboard_row_changed;
-    g_api->add_setting(g_mod, &icons);
+    add_row(icons);
+    FH2Setting hover{};
+    hover.size        = sizeof hover;
+    hover.key         = "HoverSelects";
+    hover.label       = "Mouse hover selects";
+    hover.description = "Moving the mouse over a button, list row or slider selects it. Off, only a click does.";
+    hover.value       = g_cfg.hover_focus;
+    hover.on_change   = keyboard_row_changed;
+    add_row(hover);
+    FH2Setting look{};
+    look.size        = sizeof look;
+    look.key         = "FreeLook";
+    look.label       = "Mouse free look";
+    look.description = "While driving, moving the mouse looks around. The cursor stays in the game's window: Alt+Tab to leave it.";
+    look.value       = g_cfg.free_look;
+    look.on_change   = keyboard_row_changed;
+    add_row(look);
+    FH2Setting speed{};
+    speed.size         = sizeof speed;
+    speed.key          = "FreeLookSensitivity";
+    speed.label        = "Mouse free look sensitivity";
+    speed.description  = "How far the camera turns for the mouse's movement while you look around. 50 is the usual, 100 twice as far, 0 not at all.";
+    speed.kind         = FH2_SETTING_SLIDER;
+    speed.min          = 0;
+    speed.max          = 100;
+    speed.step         = 5;
+    speed.slider_value = static_cast<float>(g_cfg.look_percent.load());
+    speed.decimals     = 0;
+    speed.on_slide     = look_speed_changed;
+    add_row(speed);
+    g_kbm_rows = true;
+    static std::vector<const char*> preset_names;
+    for (const Preset& p : kPresets) preset_names.push_back(p.name);
+    preset_names.push_back("Custom");
+    g_preset = matching_preset(-1);
+    FH2Setting preset{};
+    preset.size         = sizeof preset;
+    preset.key          = "Preset";
+    preset.label        = "Keyboard preset";
+    preset.description  = "Sets every key below at once. WS drive, arrow steer is the mod's own layout; AZERTY and QWERTZ put the keys where WASD's are on those keyboards. Changing a key makes it Custom.";
+    preset.kind         = FH2_SETTING_CHOICE;
+    preset.choices      = preset_names.data();
+    preset.choice_count = static_cast<uint32_t>(preset_names.size());
+    preset.value        = g_preset;
+    preset.on_change    = keyboard_row_changed;
+    add_row(preset);
     static std::string keys[kActionCount], labels[kActionCount];
     const bool nitro = GetFileAttributesW((std::wstring(g_api->azimuth_dir) + L"\\fh2-mods\\FnFNitro.dll").c_str()) !=
                        INVALID_FILE_ATTRIBUTES;
@@ -401,29 +559,35 @@ void add_keyboard_rows() {
         const Action& a = kActions[i];
         if (!std::strcmp(a.name, "Nitro") && !nitro) continue;
         if (!std::strcmp(a.name, "Horn") && !horn) continue;
-        auto& choices   = g_row_choices[i];
-        int value       = -1;
-        for (const char* c : kKeyChoices) {
-            if (!_stricmp(c, g_action_text[i].c_str())) value = static_cast<int>(choices.size());
-            choices.push_back(c);
-        }
-        if (value < 0) value = static_cast<int>(choices.size()), choices.push_back(g_action_text[i]);   // the ini's own
+        if (a.extra && !g_extra_options) continue;
+        auto& choices = g_row_choices[i];
+        auto offer    = [&](const std::string& c) {
+            if (choices.size() < kMaxChoices &&
+                std::none_of(choices.begin(), choices.end(), [&](const std::string& o) { return !_stricmp(o.c_str(), c.c_str()); }))
+                choices.push_back(c);
+        };
+        for (const char* c : kKeyChoices) offer(c);
+        offer(a.keys);
+        offer(g_action_text[i]);   // the ini's own
+        for (int p = 0; p < kPresetCount; ++p) offer(preset_keys(p, i));
+        const int value = row_value(i);
         std::vector<const char*> names;
         for (const std::string& c : choices) names.push_back(c.c_str());
         keys[i]   = std::string("Key_") + a.name;
-        labels[i] = std::string("Key: ") + a.label;
+        labels[i] = a.label;
         FH2Setting s{};
         s.size         = sizeof s;
         s.key          = keys[i].c_str();
         s.label        = labels[i].c_str();
-        s.description  = a.menu ? "The key for this in the menus. It does nothing while driving, so it can be a driving key too."
-                                : "The key for this while driving. It does nothing in the menus, so it can be a menu key too.";
+        s.description  = a.menu  ? "The key for this in the menus. It does nothing while driving, so it can be a driving key too."
+                         : a.extra ? "The key for this while driving: Extra Options' own, pressed on the controller button its ini gives it. It does nothing in the menus, so it can be a menu key too."
+                                   : "The key for this while driving. It does nothing in the menus, so it can be a menu key too.";
         s.kind         = FH2_SETTING_CHOICE;
         s.choices      = names.data();
         s.choice_count = static_cast<uint32_t>(names.size());
         s.value        = value;
         s.on_change    = keyboard_row_changed;
-        g_api->add_setting(g_mod, &s);
+        add_row(s);
     }
 }
 
@@ -456,6 +620,9 @@ void load_settings() {
             "; While driving, the mouse looks around (it stays in the window: Alt+Tab to leave it).\r\n"
             "FreeLook=1\r\n"
             "\r\n"
+            "; How fast free look turns, 0 to 100: 50 is the usual, 100 twice as fast.\r\n"
+            "FreeLookSensitivity=50\r\n"
+            "\r\n"
             "; Log what is under the cursor to fh2-mods\\platform.log.\r\n"
             "Debug=0\r\n";
         HANDLE f = CreateFileW(ini.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -470,6 +637,7 @@ void load_settings() {
     g_cfg.hide_ms     = GetPrivateProfileIntW(L"Mouse", L"HideAfterSeconds", 3, ini.c_str()) * 1000u;
     g_cfg.debug       = GetPrivateProfileIntW(L"Mouse", L"Debug", 0, ini.c_str()) != 0;
     g_cfg.free_look   = GetPrivateProfileIntW(L"Mouse", L"FreeLook", 1, ini.c_str()) != 0;
+    g_cfg.look_percent = std::max(0, std::min(100, static_cast<int>(GetPrivateProfileIntW(L"Mouse", L"FreeLookSensitivity", 50, ini.c_str()))));
     g_cfg.frame_rate  = std::min(1000, static_cast<int>(GetPrivateProfileIntW(L"Mouse", L"FrameRate", 0, ini.c_str())));
     load_keys(ini);
 }
@@ -1046,6 +1214,64 @@ std::atomic<uint32_t> g_input_frame{0};   // counts the game's input updates (0:
 std::atomic<uint64_t> g_click_bits{0};    // a help bar click's pad buttons (see help_click), held
 std::atomic<DWORD> g_click_until{0};      // ... till then
 
+// ---- Extra Options' keys ----------------------------------------------------------------------
+// Extra Options (winmm.dll, FH2_ExtraOptions.ini next to azimuth.exe) works the blinkers, the
+// hazards and the headlights from the pad's buttons as XInput reads them (the current player's
+// input, +0xC0: see plugin_buttons) or from keys of its own, both bound in its [Bindings]
+// section ("SignalLeftXbox=DPadLeft"), read when the game starts. FH2Mouse's keys for them hold
+// those buttons there, and only there: the game's own buttons (+0x78) don't get them, so the
+// left indicator's d-pad left doesn't change the radio as well.
+std::array<uint16_t, kActionCount> g_extra_bits{};  // the pad buttons each of our keys holds for it
+
+uint16_t xbox_bits(const std::string& text) {
+    static const struct { const char* name; uint16_t bit; } names[] = {
+        {"DPadUp", 0x1}, {"DPadDown", 0x2}, {"DPadLeft", 0x4}, {"DPadRight", 0x8}, {"Menu", 0x10}, {"Start", 0x10},
+        {"View", 0x20}, {"Back", 0x20}, {"LeftStick", 0x40}, {"LS", 0x40}, {"RightStick", 0x80}, {"RS", 0x80},
+        {"LB", 0x100}, {"RB", 0x200}, {"A", 0x1000}, {"B", 0x2000}, {"X", 0x4000}, {"Y", 0x8000},
+    };
+    uint16_t bits = 0;
+    std::size_t p = 0;
+    while (p <= text.size()) {
+        std::size_t e = text.find('+', p);
+        if (e == std::string::npos) e = text.size();
+        std::string t = text.substr(p, e - p);
+        t.erase(0, t.find_first_not_of(" \t"));
+        t.erase(t.find_last_not_of(" \t") + 1);
+        bool known = false;
+        for (const auto& n : names)
+            if (!_stricmp(t.c_str(), n.name)) bits |= n.bit, known = true;
+        if (!known) return 0;   // None, a trigger (LT / RT: not a button), or something unknown
+        p = e + 1;
+    }
+    return bits;
+}
+
+void load_extra_bindings() {
+    const std::wstring ini = std::wstring(g_api->azimuth_dir) + L"\\FH2_ExtraOptions.ini";
+    g_extra_options        = GetFileAttributesW(ini.c_str()) != INVALID_FILE_ATTRIBUTES;
+    if (!g_extra_options) return;
+    for (int i = 0; i < kActionCount; ++i) {
+        if (!kActions[i].extra) continue;
+        wchar_t buf[64] = {};
+        GetPrivateProfileStringW(L"Bindings", (widen(kActions[i].extra) + L"Xbox").c_str(), L"", buf, 64, ini.c_str());
+        std::string text;
+        for (const wchar_t* c = buf; *c; ++c) text += *c < 128 ? static_cast<char>(*c) : '?';
+        g_extra_bits[i] = xbox_bits(text);
+        if (!g_extra_bits[i])
+            g_api->log(g_mod, (std::string("Extra Options' ") + kActions[i].extra + "Xbox is \"" + text +
+                               "\", which isn't pad buttons: the " + kActions[i].label + " key does nothing")
+                                  .c_str());
+    }
+}
+
+// The pad buttons the keys hold for Extra Options.
+uint16_t extra_pad_bits() {
+    uint16_t bits = 0;
+    for (int i = 0; i < kActionCount; ++i)
+        if (g_extra_bits[i] && g_held[i].load()) bits |= g_extra_bits[i];
+    return bits;
+}
+
 // The pad's buttons the keys (and a help bar click) hold.
 uint64_t keys_pad_bits() {
     uint64_t bits = 0;
@@ -1084,6 +1310,12 @@ uintptr_t input_update(void* inputs, float dt) {
     *reinterpret_cast<uint64_t*>(in + INPUT_LAST_STATE + STATE_BUTTONS) |= last_bits;
     if (last_bits & 0xF) set_dpad(in + INPUT_LAST_STATE, last_bits);
     last_bits = bits;
+    // Extra Options reads the buttons as read (see plugin_buttons) in the simulation too, after this.
+    if (const uint16_t extra = extra_pad_bits()) {
+        uint8_t* inputs = at<uint8_t*>(g_base, RVA_INPUTS);
+        if (uint8_t* cur = inputs ? at<uint8_t*>(inputs, INPUTS_CURRENT) : nullptr)
+            *reinterpret_cast<uint16_t*>(cur + INPUT_STATE + STATE_XINPUT_BUTTONS) |= extra;
+    }
     return r;
 }
 
@@ -1098,7 +1330,7 @@ void plugin_buttons() {
     uint8_t* cur    = inputs ? at<uint8_t*>(inputs, INPUTS_CURRENT) : nullptr;
     if (!cur) return;
     cur[INPUT_CONNECTED] = 1;
-    *reinterpret_cast<uint16_t*>(cur + INPUT_STATE + STATE_XINPUT_BUTTONS) |= static_cast<uint16_t>(keys_pad_bits());
+    *reinterpret_cast<uint16_t*>(cur + INPUT_STATE + STATE_XINPUT_BUTTONS) |= static_cast<uint16_t>(keys_pad_bits()) | extra_pad_bits();
 }
 
 // What the keys add to a driving control's value (0 if none is held).
@@ -1164,7 +1396,7 @@ void look_frame() {
     }
     float yaw = g_look_yaw.load();
     if (p.x != mid.x || p.y != mid.y) {
-        yaw   = std::remainder(yaw + (p.x - mid.x) * kLookPerPixel, 2 * kPi);   // round and round
+        yaw   = std::remainder(yaw + (p.x - mid.x) * kLookPerPixel * g_cfg.look_percent.load() / 50.f, 2 * kPi);   // round and round
         if (yaw == 0) yaw = 1e-6f;   // 0 is let go
         moved = GetTickCount();
         SetCursorPos(mid.x, mid.y);
@@ -1680,6 +1912,11 @@ void write_key_icons() {
     for (const auto& keys : g_action_keys)
         for (int vk : keys)
             if (vk) vks.push_back(vk);
+    for (int i = 0; i < kActionCount; ++i) {   // what a row or a preset can give the action
+        if (const int vk = vk_of(kActions[i].keys)) vks.push_back(vk);
+        for (int p = 0; p < kPresetCount; ++p)
+            if (const int vk = vk_of(preset_keys(p, i))) vks.push_back(vk);
+    }
     std::sort(vks.begin(), vks.end());
     vks.erase(std::unique(vks.begin(), vks.end()), vks.end());
     std::vector<uint8_t> glyph(kKeySize * kKeySize);
@@ -2354,13 +2591,14 @@ uint8_t* focus_target(uint8_t* ctl) {
 
 // -1 / +1: the click is on the left / right part of a slider or spinner (where its arrows are).
 // The RepeatButtons (arrows) laid out inside `v`.
-void arrows_in(uint8_t* v, std::vector<uint8_t*>& out, int depth) {
+// With `all`, those not laid out too.
+void arrows_in(uint8_t* v, std::vector<uint8_t*>& out, int depth, bool all = false) {
     if (!v || depth > 24 || out.size() > 8) return;
     void* t = type_of(v);
     if (!is(t, TYPE_VISUAL)) return;
-    if (is(t, TYPE_REPEAT_BUTTON) && laid_out(v)) out.push_back(v);
+    if (is(t, TYPE_REPEAT_BUTTON) && (all || laid_out(v))) out.push_back(v);
     const int n = vfn<CountFn>(v, VT_CHILD_COUNT)(v);
-    for (int i = 0; i < n && i < 256; ++i) arrows_in(vfn<ChildFn>(v, VT_CHILD)(v, i), out, depth + 1);
+    for (int i = 0; i < n && i < 256; ++i) arrows_in(vfn<ChildFn>(v, VT_CHILD)(v, i), out, depth + 1, all);
 }
 
 int adjust_side(uint8_t* control, const float pt[2]) {
@@ -2368,7 +2606,12 @@ int adjust_side(uint8_t* control, const float pt[2]) {
     float r[4];
     if (!bounds(control, root, r)) return 0;
     const float w = r[2] - r[0];
-    if (is(type_of(control), TYPE_SLIDER)) {
+    std::vector<uint8_t*> any;
+    if (is(type_of(control), TYPE_SLIDER)) arrows_in(control, any, 0, true);
+    // A slider with no RepeatButtons at all is the platform's choice row (the Mods page's, and
+    // Keyboard & Mouse's keys): its Track is hidden and it's drawn as a spinner, "<  value  >"
+    // in the right half, so it's clicked as one (below).
+    if (!any.empty()) {
         // A slider: its track's "decrease" RepeatButton runs from the track's start to the
         // value. Left of the value is down, right of it up; the label before the track, nothing.
         std::vector<uint8_t*> parts;
@@ -3337,6 +3580,550 @@ void hook_horn() {
         logf("HonkHonk is here, but its pad reading isn't as expected: no Horn key");
 }
 
+// ---- Pause > Settings > Keyboard & Mouse ---------------------------------------------------------
+// The keys' rows (and the mouse's) get a tile of their own on the Settings page, next to Controls,
+// instead of being among every mod's rows on the platform's MODS page.
+//
+// - The pages' XAML is edited as the game reads it, as Extra Options edits the pages it changes:
+//   the page loader (0x16EBB37) gets the file's bytes with 0xAABEC0(reader, Ptr* out), a resource
+//   object with the text at +0x28 and its length at +0x30. That function is hooked; for the page
+//   loader's call (or Extra Options', which takes that call over and calls it from its own DLL)
+//   a resource of ours with the edited text is handed back instead, as Extra Options makes them.
+// - A_PauseOptions.xaml: Controls becomes a square tile, and ours goes beside it, in the other
+//   half of its place (GridX 2), so the grid keeps its size.
+// - The tile is wired as the platform wires its MODS tile (PauseOptionsMenu's 0xDC8A60 wires the
+//   tiles, with 0xD9FC10(page, "PART_Button_X", &pmf)), and opens the page as the MODS tile does:
+//   it runs the HUD tile's handler (0xDC6C40), and the HUD page's scene record (0xB3A3E0, built
+//   twice) is pointed at the platform's Mods page, A_ModOptions.
+// - That page, read just after our tile was pressed, keeps only this mod's rows (the platform
+//   writes " (FH2 Mouse & Keyboard)" at the end of their descriptions) and gets our title; read at
+//   any other time, it loses them. Its rows are bound to the platform's properties, so a change
+//   comes to keyboard_row_changed as before.
+constexpr uintptr_t RVA_GET_RESOURCE      = 0x0AABEC0;   // Ptr* (reader, Ptr* out): the reader's data, add-ref'd
+constexpr uintptr_t RVA_PAGE_XAML_RETURN  = 0x16EBB3C;   // after the page loader's call to it
+constexpr uintptr_t RVA_GAME_ALLOCATE     = 0x03229C0;
+constexpr uintptr_t RVA_GAME_FREE         = 0x031C7B0;
+constexpr uintptr_t RVA_OBJECT_INIT       = 0x143EB80;
+constexpr uintptr_t RVA_OBJECT_CLEANUP    = 0x1442050;
+constexpr uintptr_t RVA_PAUSE_WIRE_TILES  = 0x0DC8A60;   // PauseOptionsMenu: wire the tiles (page)
+constexpr uintptr_t RVA_WIRE_BUTTON       = 0x0D9FC10;   // (page, const char* name, const Pmf*)
+constexpr uintptr_t RVA_HUD_TILE          = 0x0DC6C40;   // PauseOptionsMenu::OnHud(page)
+constexpr uintptr_t RVA_HUD_SCENE_RECORD  = 0x0B3A3E0;   // SceneRecord* build(SceneRecord* out)
+
+constexpr char kModName[]    = "FH2 Mouse & Keyboard";
+constexpr char kOurSuffix[]  = " (FH2 Mouse &amp; Keyboard)\"";   // the end of our rows' descriptions
+constexpr char kTileTitle[]  = "KEYBOARD &amp; MOUSE";
+
+struct XamlResource {
+    void** vtable;
+    uint8_t header[0x20];   // the refcount at +0x10
+    char* bytes;
+    int length;
+    int capacity;
+};
+static_assert(offsetof(XamlResource, bytes) == 0x28, "the resource's text");
+
+using GetResourceFn = void** (*)(void* reader, void** out);
+using AllocateFn    = void* (*)(std::size_t);
+using ObjectFn      = void (*)(void* obj);
+struct Pmf {
+    void* fn;
+    int32_t adjust, pad;
+};
+using WireTilesFn  = void (*)(void* page);
+using WireButtonFn = void (*)(void* page, const char* name, const Pmf* pmf);
+using SceneRecFn   = uint8_t* (*)(uint8_t* out);
+
+GetResourceFn o_get_resource = nullptr;
+WireTilesFn o_wire_tiles     = nullptr;
+SceneRecFn o_hud_scene       = nullptr;
+uintptr_t g_image_end        = 0;              // the game image's end
+std::atomic<bool> g_kbm_tile{false};           // the Settings page was given the tile
+std::atomic<bool> g_kbm_failed{false};         // ... or couldn't be: the rows stay on the MODS pages
+std::atomic<uint64_t> g_kbm_asked{0};          // GetTickCount64() when it was pressed
+std::atomic<int> g_kbm_builds{0};              // scene records still to point at the Mods page
+std::atomic<uint64_t> g_kbm_opening{0};        // ... pointed: the Mods page that's read next is ours
+
+// Our resources' vtables: the original's, with a destructor that frees what we allocated.
+std::mutex g_vt_mu;
+struct VtCopy {
+    void** from;
+    void* slots[7];
+};
+std::vector<VtCopy*> g_vts;   // guarded by g_vt_mu, never freed
+
+void* xaml_resource_delete(XamlResource* r, unsigned flags) {
+    game<ObjectFn>(RVA_OBJECT_CLEANUP)(r);
+    if (flags & 1) game<ObjectFn>(RVA_GAME_FREE)(r);
+    return r;
+}
+
+void** our_vtable(void** from) {
+    std::scoped_lock lk{g_vt_mu};
+    for (VtCopy* v : g_vts)
+        if (v->from == from) return v->slots + 1;
+    auto* v = new VtCopy{from, {}};
+    std::memcpy(v->slots, from - 1, sizeof v->slots);   // [-1] is the RTTI locator
+    v->slots[1] = reinterpret_cast<void*>(&xaml_resource_delete);
+    g_vts.push_back(v);
+    return v->slots + 1;
+}
+
+bool readable_range(const void* p, std::size_t n) {
+    MEMORY_BASIC_INFORMATION mbi{};
+    if (!p || VirtualQuery(p, &mbi, sizeof mbi) != sizeof mbi || mbi.State != MEM_COMMIT) return false;
+    if (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) return false;
+    return static_cast<const char*>(p) + n <= static_cast<const char*>(mbi.BaseAddress) + mbi.RegionSize;
+}
+
+// The resource's text, if it's one (and a page we change, by its first bytes).
+bool resource_text(void* obj, const char** bytes, int* length) {
+    __try {
+        auto* r = static_cast<XamlResource*>(obj);
+        if (!readable_range(r, sizeof *r) || !r->bytes || r->length <= 0 || r->length > (8 << 20)) return false;
+        if (!readable_range(r->bytes, static_cast<std::size_t>(r->length))) return false;
+        *bytes  = r->bytes;
+        *length = r->length;
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+// *out becomes a resource of ours with `text`, the original released.
+bool replace_resource(void** out, const std::string& text) {
+    auto* original = static_cast<XamlResource*>(*out);
+    const std::size_t capacity = text.size() + 1;
+    auto* r = static_cast<XamlResource*>(game<AllocateFn>(RVA_GAME_ALLOCATE)(sizeof(XamlResource) + capacity));
+    if (!r) return false;
+    char* bytes = reinterpret_cast<char*>(r + 1);
+    std::memcpy(bytes, text.data(), text.size());
+    bytes[text.size()] = 0;
+    __try {
+        game<ObjectFn>(RVA_OBJECT_INIT)(r);
+        r->vtable   = our_vtable(original->vtable);
+        r->bytes    = bytes;
+        r->length   = static_cast<int>(text.size());
+        r->capacity = static_cast<int>(capacity);
+        *out        = r;
+        release(reinterpret_cast<uint8_t*>(original));
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+// The tiles' pictures: ours a keyboard and a mouse, drawn as the platform draws its MODS tab's
+// (Paths in the light grey of the game's icons); Controls the game's own wide picture, its right
+// half (the pad) in a square.
+const char kTileResources[] = R"X(
+            <local:TileMenuDataItem x:Key="FH2Mouse_MenuDataItem_Kbm" Heading="KEYBOARD &amp; MOUSE" Icon="" />
+            <ControlTemplate x:Key="FH2Mouse_Template_Kbm" TargetType="{x:Type Button}">
+                <Grid Style="{StaticResource A_Style_FrameworkElement_DefaultTransition}" local:UIPageTransitionManager.TransitionIndex="{Binding (local:UIPageTransitionManager.TransitionIndex), RelativeSource={RelativeSource TemplatedParent}}">
+                    <Grid Style="{StaticResource A_Style_Grid_HiddenWhenLocked}">
+                        <local:FZMaterial Style="{StaticResource A_Style_FZMaterial_TileShadow}" />
+                    </Grid>
+                    <Grid Style="{StaticResource A_Style_Grid_MotionBlur}">
+                        <local:FZMaterial Style="{StaticResource A_Style_FZMaterial_TileBackground}" />
+                        <Grid ClipToBounds="True">
+                            <Path Data="M18,140 L190,140 L190,250 L18,250 Z M232,148 A22,22 0 0 1 254,170 L254,226 A22,22 0 0 1 210,226 L210,170 A22,22 0 0 1 232,148 Z M232,150 L232,186" Stroke="#FFDCDCDC" StrokeThickness="12" />
+                            <Path Data="M38,160 L56,160 L56,178 L38,178 Z M66,160 L84,160 L84,178 L66,178 Z M94,160 L112,160 L112,178 L94,178 Z M122,160 L140,160 L140,178 L122,178 Z M150,160 L168,160 L168,178 L150,178 Z M38,186 L56,186 L56,204 L38,204 Z M66,186 L84,186 L84,204 L66,204 Z M94,186 L112,186 L112,204 L94,204 Z M122,186 L140,186 L140,204 L122,204 Z M150,186 L168,186 L168,204 L150,204 Z M38,212 L56,212 L56,230 L38,230 Z M66,212 L140,212 L140,230 L66,230 Z M150,212 L168,212 L168,230 L150,230 Z" Fill="#FFDCDCDC" />
+                        </Grid>
+                        <Grid Margin="{StaticResource A_Thickness_TilePadding}">
+                            <local:FZTextBlock Text="{Binding DataContext.Heading, RelativeSource={RelativeSource TemplatedParent}}" Style="{StaticResource A_Style_FZTextBlock_TileTitle}" HorizontalAlignment="Left" TextAlignment="Left" MaxWidth="{Binding Width, RelativeSource={RelativeSource TemplatedParent}}" />
+                        </Grid>
+                        <local:FZMaterial Style="{StaticResource A_Style_FZMaterial_TileSelectionBar}" />
+                    </Grid>
+                </Grid>
+            </ControlTemplate>
+            <ControlTemplate x:Key="FH2Mouse_Template_Controls" TargetType="{x:Type Button}">
+                <Grid Style="{StaticResource A_Style_FrameworkElement_DefaultTransition}" local:UIPageTransitionManager.TransitionIndex="{Binding (local:UIPageTransitionManager.TransitionIndex), RelativeSource={RelativeSource TemplatedParent}}">
+                    <Grid Style="{StaticResource A_Style_Grid_HiddenWhenLocked}">
+                        <local:FZMaterial Style="{StaticResource A_Style_FZMaterial_TileShadow}" />
+                    </Grid>
+                    <Grid Style="{StaticResource A_Style_Grid_MotionBlur}">
+                        <local:FZMaterial Style="{StaticResource A_Style_FZMaterial_TileBackground}" />
+                        <Grid ClipToBounds="True">
+                            <local:FZMaterial Style="{StaticResource A_Style_FZMaterial_LockableImage}" ImageSource="{Binding DataContext.Icon, RelativeSource={RelativeSource TemplatedParent}}" Width="558" Height="276" HorizontalAlignment="Right" VerticalAlignment="Center" StretchDirection="Both" />
+                        </Grid>
+                        <Grid Margin="{StaticResource A_Thickness_TilePadding}">
+                            <local:FZTextBlock Text="{Binding DataContext.Heading, RelativeSource={RelativeSource TemplatedParent}}" Style="{StaticResource A_Style_FZTextBlock_TileTitle}" HorizontalAlignment="Left" TextAlignment="Left" MaxWidth="{Binding Width, RelativeSource={RelativeSource TemplatedParent}}" />
+                            <local:FZMaterial Style="{StaticResource A_Style_Tile_LockIcon}" />
+                        </Grid>
+                        <local:FZMaterial Style="{StaticResource A_Style_FZMaterial_TileSelectionBar}" />
+                    </Grid>
+                </Grid>
+            </ControlTemplate>
+)X";
+
+const char kTileButton[] = R"X(
+                                <Button x:Name="PART_Button_FH2Mouse"
+                                        local:TileMenuNavigationManager.TileState="Enabled"
+                                        DataContext="{StaticResource FH2Mouse_MenuDataItem_Kbm}"
+                                        local:TileMenuNavigationManager.GridX="2"
+                                        local:TileMenuNavigationManager.GridY="0"
+                                        Style="{DynamicResource A_Style_Button_Tile_1x1}"
+                                        Canvas.Left="{StaticResource A_Double_TileCoord_X_2}"
+                                        Canvas.Top="{StaticResource A_Double_TileCoord_Y_0}"
+                                        Template="{StaticResource FH2Mouse_Template_Kbm}"
+                                        local:UIPageTransitionManager.TransitionIndex="1"
+                                        local:BindingProxy.C="DisableMotionBlur"/>)X";
+
+bool replace_once(std::string& s, const std::string& from, const std::string& to) {
+    const std::size_t at = s.find(from);
+    if (at == std::string::npos) return false;
+    s.replace(at, from.size(), to);
+    return true;
+}
+
+// A_PauseOptions.xaml: Controls in a square, our tile beside it.
+bool add_settings_tile(std::string& page) {
+    const std::size_t named = page.find("x:Name=\"PART_Button_Controls\"");
+    const std::size_t item  = page.find("x:Key=\"A_MenuDataItem_TeamCredits\"");
+    if (named == std::string::npos || item == std::string::npos || page.find("PART_Button_FH2Mouse") != std::string::npos ||
+        page.find("TileMenuNavigationManager.GridX=\"2\"") != std::string::npos)
+        return false;
+    const std::size_t a = page.rfind("<Button", named), b = page.find("/>", named);
+    const std::size_t item_end = page.find('\n', item);
+    if (a == std::string::npos || b == std::string::npos || item_end == std::string::npos || item_end > a) return false;
+    std::string el = page.substr(a, b + 2 - a);
+    if (!replace_once(el, "A_Style_Button_Tile_2x1", "A_Style_Button_Tile_1x1") ||
+        !replace_once(el, "A_ControlTemplate_HorizontalImageTile", "FH2Mouse_Template_Controls"))
+        return false;
+    page.replace(a, b + 2 - a, el + kTileButton);
+    page.insert(item_end + 1, kTileResources);
+    return true;
+}
+
+// ---- the rows on screen follow a preset --------------------------------------------------------
+// The platform tells the page only of the row that was changed, and a preset changes the key
+// rows too. So our rows' property descriptors (the platform's, looked up as the page's bindings
+// look them up, with AVUI::Type::FindProperty, which the platform hooks) get a setter of ours
+// around the platform's: after the platform's setter (and so our on_change) it raises
+// PropertyChanged(page, descriptor) (0xCF9C60) for the rows refresh_row asked for, and the page
+// reads them again.
+constexpr uintptr_t RVA_FIND_PROPERTY = 0x157FF60;   // AVUI::Type::FindProperty(type, String* name)
+constexpr uintptr_t RVA_NOTIFY_PROP   = 0x0CF9C60;   // raise PropertyChanged(obj, descriptor)
+constexpr uintptr_t DESC_SETTER       = 0x30;        // a property descriptor's setter (desc, obj, Ptr value)
+using FindPropertyFn = uint8_t* (*)(void* type, void* name);
+using NotifyPropFn   = void (*)(void* obj, void* desc);
+using RowSetFn       = void (*)(void* desc, void* obj, void* value);
+RowSetFn o_row_set   = nullptr;   // the platform's setter
+bool g_refresh_ok    = false;     // NotifyProp is as expected
+std::vector<std::pair<std::string, std::string>> g_open_props;   // the page being opened: our keys and properties
+std::mutex g_desc_mu;
+std::vector<std::pair<std::string, uint8_t*>> g_descs;   // our keys' descriptors (guarded by g_desc_mu)
+std::vector<uint8_t*> g_refresh;                          // to tell the page of (UI thread)
+
+void refresh_row(const char* key) {
+    std::scoped_lock lk{g_desc_mu};
+    for (const auto& [k, d] : g_descs)
+        if (k == key) g_refresh.push_back(d);
+}
+
+void notify_guarded(void* obj, void* desc) {
+    __try {
+        game<NotifyPropFn>(RVA_NOTIFY_PROP)(obj, desc);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
+}
+
+void row_set(void* desc, void* obj, void* value) {
+    o_row_set(desc, obj, value);
+    std::vector<uint8_t*> now;
+    now.swap(g_refresh);
+    if (obj)
+        for (uint8_t* d : now) notify_guarded(obj, d);
+}
+
+uint8_t* find_property_guarded(void* type, void* name) {
+    __try {
+        return game<FindPropertyFn>(RVA_FIND_PROPERTY)(type, name);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+// The descriptor's setter becomes ours (once); false if it isn't the platform's row setter.
+bool wrap_setter(uint8_t* d) {
+    __try {
+        void** setter = reinterpret_cast<void**>(d + DESC_SETTER);
+        if (*setter == reinterpret_cast<void*>(&row_set)) return true;
+        if (!*setter || (o_row_set && *setter != reinterpret_cast<void*>(o_row_set))) return false;
+        o_row_set = reinterpret_cast<RowSetFn>(*setter);
+        *setter   = reinterpret_cast<void*>(&row_set);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+// Our rows' descriptors, for the page being opened (each looked up once: they're for good).
+void find_descriptors() {
+    if (!g_refresh_ok) return;
+    static uint8_t no_type[0x100] = {};   // no properties of its own and no base: only the platform's are found
+    int found = 0;
+    for (const auto& [key, prop] : g_open_props) {
+        {
+            std::scoped_lock lk{g_desc_mu};
+            if (std::any_of(g_descs.begin(), g_descs.end(), [&](const auto& e) { return e.first == key; })) {
+                ++found;
+                continue;
+            }
+        }
+        auto* name = new uint8_t[0x80]();   // kept, as the game may keep what it's asked with
+        game<AvuiStringFn>(RVA_AVUI_STRING)(name, prop.c_str(), -1);
+        InterlockedIncrement(reinterpret_cast<volatile LONG*>(name + 0x10));
+        uint8_t* d = find_property_guarded(no_type, name);
+        if (!d || !wrap_setter(d)) continue;
+        std::scoped_lock lk{g_desc_mu};
+        g_descs.emplace_back(key, d);
+        ++found;
+    }
+    if (found < static_cast<int>(g_open_props.size()))
+        logf("only %d of the page's %d rows can be shown changing: a preset's keys show the next time it opens", found,
+             static_cast<int>(g_open_props.size()));
+}
+
+// The Mods page (A_ModOptions.xaml, "ALL SETTINGS"): only our rows (`ours`), or all but them.
+bool filter_mods_page(std::string& page, bool ours) {
+    const std::string list_at = "<local:CommonListBox x:Name=\"OptionsList\"", list_end = "</local:CommonListBox>";
+    const std::string item = "<local:TileMenuDataItem x:Key=\"FH2Mod_Item_", tag = "Tag=\"{StaticResource FH2Mod_Item_";
+    const std::string first = " x:Name=\"FirstItem\"";
+    if (page.find("Content=\"ALL SETTINGS\"") == std::string::npos) return false;
+    // our rows, by number
+    std::vector<std::string> mine;
+    std::vector<std::pair<std::string, std::string>> props;   // our rows' keys and properties
+    for (std::size_t p = page.find(item); p != std::string::npos; p = page.find(item, p + 1)) {
+        const std::size_t n = p + item.size(), q = page.find('"', n), e = page.find("/>", n);
+        if (q == std::string::npos || e == std::string::npos) return false;
+        const std::string el = page.substr(n, e - n);
+        if (el.find(kOurSuffix) == std::string::npos) continue;
+        mine.push_back(page.substr(n, q - n));
+        const std::size_t h = el.find("Heading=\""), he = h == std::string::npos ? h : el.find('"', h + 9);
+        if (he == std::string::npos) continue;
+        const std::string heading = el.substr(h + 9, he - h - 9);
+        for (const auto& [label, key] : g_row_names)
+            if (label == heading) props.emplace_back(key, "FH2Mod_" + mine.back());
+    }
+    if (mine.empty()) return false;
+    std::size_t l = page.find(list_at);
+    l = l == std::string::npos ? l : page.find('>', l);
+    const std::size_t le = l == std::string::npos ? l : page.find(list_end, l);
+    if (le == std::string::npos) return false;
+    std::string kept;
+    int rows = 0;
+    bool any_other = false;
+    std::size_t p = l + 1;
+    while (p < le) {
+        std::size_t e = page.find('\n', p);
+        e = e == std::string::npos || e > le ? le : e + 1;
+        std::string line = page.substr(p, e - p);
+        p = e;
+        const std::size_t t = line.find(tag);
+        if (t != std::string::npos) {
+            const std::size_t n = t + tag.size(), q = line.find('}', n);
+            if (q == std::string::npos) return false;
+            const bool is_mine = std::find(mine.begin(), mine.end(), line.substr(n, q - n)) != mine.end();
+            any_other = any_other || !is_mine;
+            if (is_mine != ours) continue;
+            while (replace_once(line, first, "")) {}
+            if (rows++ == 0) {   // the page's first row is named FirstItem
+                const std::size_t close = line.rfind("/>");
+                if (close == std::string::npos) return false;
+                line.insert(close, first.substr(1) + " ");
+            }
+        }
+        kept += line;
+    }
+    if (!rows || (!ours && !any_other)) return false;
+    page.replace(l + 1, le - (l + 1), kept);
+    if (ours) {
+        g_open_props = props;
+        replace_once(page, "Content=\"ALL SETTINGS\"", std::string("Content=\"") + kTileTitle + "\"");
+        while (replace_once(page, kOurSuffix, "\"")) {}   // the descriptions needn't say whose they are
+    }
+    return true;
+}
+
+// MODS > Installed mods ("INSTALLED MODS"): each mod's view is a list of its rows; ours lose
+// theirs, as they're on their own page. The platform finds what A does on a row by its place
+// in the list, so ours go only from the end of a list (they're last in our mod's).
+bool filter_installed_page(std::string& page) {
+    const std::string item = "<local:TileMenuDataItem x:Key=\"", tag = "Tag=\"{StaticResource ";
+    const std::string list_at = "<local:CommonListBox", list_end = "</local:CommonListBox>";
+    if (page.find("Content=\"INSTALLED MODS\"") == std::string::npos) return false;
+    std::vector<std::string> mine;   // our rows' items, by key
+    for (std::size_t p = page.find(item); p != std::string::npos; p = page.find(item, p + 1)) {
+        const std::size_t n = p + item.size(), q = page.find('"', n), e = page.find("/>", n);
+        if (q == std::string::npos || e == std::string::npos) return false;
+        if (page.substr(n, e - n).find(kOurSuffix) != std::string::npos) mine.push_back(page.substr(n, q - n));
+    }
+    if (mine.empty()) return false;
+    bool changed = false;
+    for (std::size_t l = page.find(list_at); l != std::string::npos; l = page.find(list_at, l + 1)) {
+        const std::size_t open = page.find('>', l), le = open == std::string::npos ? open : page.find(list_end, open);
+        if (le == std::string::npos) return false;
+        // the rows, each a line: from the end, ours while there are any
+        std::size_t cut = le, p = le;
+        while (p > open + 1) {
+            const std::size_t start = page.rfind('\n', p - 2) + 1;
+            const std::string line  = page.substr(start, p - start);
+            const std::size_t t     = line.find(tag);
+            if (t != std::string::npos) {
+                const std::size_t n = t + tag.size(), q = line.find('}', n);
+                if (q == std::string::npos || std::find(mine.begin(), mine.end(), line.substr(n, q - n)) == mine.end() ||
+                    line.find("x:Name=") != std::string::npos)
+                    break;
+                cut = start;
+            } else if (line.find_first_not_of(" \t\r\n") != std::string::npos) {
+                break;   // something else (the list's own tag)
+            }
+            p = start;
+        }
+        if (cut == le) continue;
+        page.erase(cut, le - cut);
+        page.insert(cut, "                                ");
+        changed = true;
+    }
+    return changed;
+}
+
+bool has(const char* bytes, int length, const char* what) {
+    const std::size_t n = std::strlen(what);
+    const char* end     = bytes + length;
+    return std::search(bytes, end, what, what + n) != end;
+}
+
+void edit_page(void** out) {
+    const char* bytes = nullptr;
+    int length        = 0;
+    if (!resource_text(*out, &bytes, &length)) return;
+    // Only the two pages: their class is near the top.
+    const int head = std::min(length, 2048);
+    const bool settings = has(bytes, head, "x:Class=\"ForzaUI.A_PauseOptions\"");
+    const bool mods     = !settings && has(bytes, head, "x:Class =\"ForzaUI.A_HudOptions\"");   // the platform's (see its settings.cpp)
+    if (!settings && !mods) return;
+    std::string text(bytes, static_cast<std::size_t>(length));
+    if (settings) {
+        if (!add_settings_tile(text) || !replace_resource(out, text)) {
+            if (!g_kbm_failed.exchange(true)) logf("the Settings page isn't as expected: the keys stay on the MODS page");
+            return;
+        }
+        if (!g_kbm_tile.exchange(true)) logf("Pause > Settings: Keyboard & Mouse tile added");   // the page is read each time it shows
+        return;
+    }
+    // The Settings page may not have been read yet (it is when it first shows); the rows leave the
+    // MODS pages unless it couldn't be given the tile.
+    if (g_kbm_failed.load()) return;
+    const uint64_t opening = g_kbm_opening.exchange(0);
+    const bool ours        = opening && GetTickCount64() - opening < 5000;
+    if (!ours && filter_installed_page(text)) {
+        replace_resource(out, text);
+    } else if (filter_mods_page(text, ours)) {
+        if (replace_resource(out, text) && ours) find_descriptors();
+    } else if (ours) {
+        logf("the Mods page isn't as expected: it shows every mod's rows");
+    }
+}
+
+void** d_get_resource(void* reader, void** out) {
+    const auto from = reinterpret_cast<uintptr_t>(RETURN_ADDRESS());
+    void** r = o_get_resource(reader, out);
+    // The page loader's call, or Extra Options' (from its own DLL): nothing else outside the game calls it.
+    const bool in_game = from >= reinterpret_cast<uintptr_t>(g_base) && from < g_image_end;
+    if (r == out && out && *out && (!in_game || from == reinterpret_cast<uintptr_t>(g_base) + RVA_PAGE_XAML_RETURN))
+        edit_page(out);
+    return r;
+}
+
+// L"Anthem\A_HudOptions" -> L"Anthem\A_ModOptions", in place (as the platform's MODS tile does)
+bool point_at_mods_page(uint8_t* rec) {
+    __try {
+        const uint64_t size = *reinterpret_cast<uint64_t*>(rec + 0x38);
+        const uint64_t cap  = *reinterpret_cast<uint64_t*>(rec + 0x40);
+        wchar_t* p = cap > 7 ? *reinterpret_cast<wchar_t**>(rec + 0x28) : reinterpret_cast<wchar_t*>(rec + 0x28);
+        if (size != 19 || !readable_range(p, 40) || std::wcsncmp(p, L"Anthem\\A_HudOptions", 19) != 0) return false;
+        std::wmemcpy(p + 7, L"A_ModOptions", 12);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+uint8_t* d_hud_scene(uint8_t* out) {
+    uint8_t* r = o_hud_scene(out);
+    if (g_kbm_builds.load() > 0 && GetTickCount64() - g_kbm_asked.load() < 1500) {
+        --g_kbm_builds;
+        if (point_at_mods_page(r)) g_kbm_opening = GetTickCount64();
+        else logf("the HUD page's scene record isn't as expected: the tile opened the HUD page");
+    }
+    return r;
+}
+
+void kbm_tile_pressed(void* page) {
+    g_kbm_builds = 2;
+    g_kbm_asked  = GetTickCount64();
+    game<ObjectFn>(RVA_HUD_TILE)(page);
+}
+
+void wire_kbm_tile(void* page) {
+    static const Pmf pmf{reinterpret_cast<void*>(&kbm_tile_pressed), 0, 0};
+    __try {
+        game<WireButtonFn>(RVA_WIRE_BUTTON)(page, "PART_Button_FH2Mouse", &pmf);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
+}
+
+void d_wire_tiles(void* page) {
+    g_kbm_builds = 0;
+    o_wire_tiles(page);
+    if (g_kbm_tile.load()) wire_kbm_tile(page);
+}
+
+void hook_settings_tile() {
+    if (!g_kbm_rows) return;
+    const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(g_base);
+    const auto* nt  = reinterpret_cast<const IMAGE_NT_HEADERS64*>(g_base + dos->e_lfanew);
+    g_image_end     = reinterpret_cast<uintptr_t>(g_base) + nt->OptionalHeader.SizeOfImage;
+    // What it calls (what it hooks, the platform checks against the exe on disk: the platform hooks them too).
+    static const Expect checks[] = {
+        {RVA_WIRE_BUTTON, {0x48, 0x8B, 0xC4, 0x57, 0x48, 0x81, 0xEC, 0x90, 0x00, 0x00, 0x00, 0x48}},
+        {RVA_HUD_TILE, {0x40, 0x53, 0x48, 0x83, 0xEC, 0x30, 0x48, 0x8B, 0xD9, 0x48, 0x8B, 0x89}},
+        {RVA_GAME_ALLOCATE, {0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x8B, 0x15}},
+        {RVA_GAME_FREE, {0x48, 0x85, 0xC9, 0x74, 0x1D, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B}},
+        {RVA_OBJECT_INIT, {0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8D}},
+        {RVA_OBJECT_CLEANUP, {0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8D, 0x05, 0xB3, 0xD0, 0x9F}},
+    };
+    static const uint8_t notify_bytes[] = {0x40, 0x57, 0x48, 0x83, 0xEC, 0x60, 0x48, 0xC7, 0x44, 0x24, 0x20, 0xFE};
+    static const uint8_t string_bytes[] = {0x48, 0x89, 0x4C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x30};
+    g_refresh_ok = !std::memcmp(g_base + RVA_NOTIFY_PROP, notify_bytes, sizeof notify_bytes) &&
+                   !std::memcmp(g_base + RVA_AVUI_STRING, string_bytes, sizeof string_bytes);
+    if (!g_refresh_ok) logf("PropertyChanged isn't as expected: a preset's keys show the next time the page opens");
+    for (const Expect& e : checks)
+        if (std::memcmp(g_base + e.rva, e.bytes, e.len)) {
+            logf("the Settings page's code isn't as expected (game+0x%llX): the keys stay on the MODS page",
+                 static_cast<unsigned long long>(e.rva));
+            return;
+        }
+    FH2Hook* hooks[] = {
+        g_api->hook_function(g_mod, "Settings tile: wire the tiles", g_base + RVA_PAUSE_WIRE_TILES,
+                             reinterpret_cast<void*>(&d_wire_tiles), reinterpret_cast<void**>(&o_wire_tiles)),
+        g_api->hook_function(g_mod, "Settings tile: HUD page scene record", g_base + RVA_HUD_SCENE_RECORD,
+                             reinterpret_cast<void*>(&d_hud_scene), reinterpret_cast<void**>(&o_hud_scene)),
+        g_api->hook_function(g_mod, "Settings tile: page XAML", g_base + RVA_GET_RESOURCE,
+                             reinterpret_cast<void*>(&d_get_resource), reinterpret_cast<void**>(&o_get_resource)),
+    };
+    for (FH2Hook* h : hooks)
+        if (!h) {
+            for (FH2Hook* k : hooks)
+                if (k) g_api->disable_hooks(g_mod, k);
+            logf("couldn't hook the Settings page: the keys stay on the MODS page");
+            return;
+        }
+    for (FH2Hook* h : hooks) g_api->enable_hooks(g_mod, h);   // the XAML last: the rest is ready for it
+}
+
 DWORD WINAPI start(LPVOID) {
     g_base = static_cast<uint8_t*>(g_api->wait_for_code(0xFFFFFFFFu));
     if (!g_base || !code_matches()) return 0;
@@ -3462,6 +4249,7 @@ DWORD WINAPI start(LPVOID) {
     hook_nitro();
     hook_horn();
     hook_key_icons();   // last: it enables what it hooked only when all of it is
+    hook_settings_tile();   // after every enable_hooks(g_mod, nullptr): it enables its own only if all of them are made
     g_arrow = LoadCursorW(nullptr, IDC_ARROW);
     if (HANDLE t = CreateThread(nullptr, 0, window_thread, nullptr, 0, nullptr)) CloseHandle(t);
     if (HANDLE t = CreateThread(nullptr, 0, hook_thread, nullptr, 0, nullptr)) CloseHandle(t);
@@ -3478,7 +4266,7 @@ FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
                        reinterpret_cast<LPCWSTR>(&fh2mod_init), &g_self);
     FH2ModInfo info{};
     info.size             = sizeof info;
-    info.name             = "FH2 Mouse & Keyboard";
+    info.name             = kModName;   // the Mods page ends our rows' descriptions with it (kOurSuffix)
     info.version          = FH2MOUSE_VERSION;
     info.github_repo      = "qiangqiang101/FH2MouseKeyboard";
     info.platform_version = FH2MOD_PLATFORM_VERSION;
@@ -3487,6 +4275,7 @@ FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
     g_mod                 = api->register_mod(&info);
     if (!g_mod) return 1;
     load_settings();
+    load_extra_bindings();
     if (!g_cfg.enabled) {
         api->log(g_mod, "off (FH2Mouse\\FH2Mouse.ini, Enabled=0)");
         return 0;

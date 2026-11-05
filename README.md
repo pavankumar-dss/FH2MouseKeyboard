@@ -54,6 +54,9 @@ The cursor hides by itself a few seconds after you stop moving the mouse, and co
 | , / . | Previous / next radio station (or telemetry page) | |
 | Left Ctrl | Nitro, with the [FnFNitro](https://github.com/qiangqiang101/NitroSystem) mod installed | |
 | E | Horn, with the HonkHonk mod installed | |
+| [ / ] | Left / right indicator, with Extra Options installed | |
+| G | Hazard lights, with Extra Options installed | |
+| L | Headlights, with Extra Options installed | |
 | Esc | Pause | B (back) |
 | Enter | Enter garage (and the HUD's other prompts) | A (select) |
 | Page Up / Page Down | | Previous / next tab (LB / RB) |
@@ -66,7 +69,17 @@ While you play with the keyboard, the help bar and the HUD's prompts show the ke
 
 The driving keys go straight to the game's own controls, not through a pretend controller, and only while you're driving, so a key can do one thing while driving and another in the menus. W in photo mode still moves the photo camera. The menu keys, Esc's pause and the radio keys hold the pad's own buttons for the game, so the menus take them exactly as they take a pad's. No controller needs to be plugged in: Enter on the title screen signs you in without one. If a controller goes (unplugged, or its batteries run out) the keyboard plays on: no "Controller disconnected" message and no pause. Plug a pad back in and the game asks for its A, as usual, to pair it again. Look left / right can have keys too. With FnFNitro installed, Left Ctrl presses its nitro button (whichever its `NitroButton` is) for it alone: the game doesn't see it, and no controller is needed. With HonkHonk installed, E honks its horn the same way, on whichever stick its horn button is (the left one, or the right one when FH2MP moves it there).
 
-Every key can be changed in the game, in **Pause > Settings > MODS**: each action has a "Key:" row, and left / right picks its key. The change takes effect at once. "Keyboard controls" there turns the keys off, and "Keyboard icons" keeps the controller's buttons in the help bar. The same keys are in the ini's `[Keyboard]` section, which takes any key and more than one per action.
+Every key can be changed in the game, in **Pause > Settings > Keyboard & Mouse** (the tile next to Controls): each action has a row of its own ("Gas", "Menu: select"), and left / right picks its key. The change takes effect at once. "Keyboard controls" there turns the keys off, "Keyboard icons" keeps the controller's buttons in the help bar, and "Mouse hover selects" and "Mouse free look" switch those, and "Mouse free look sensitivity" sets how fast free look turns. "Keyboard preset" sets every key at once:
+
+| Preset | Drive | Steer | Shift up / down | Clutch | Also |
+|---|---|---|---|---|---|
+| WASD drive | W / S | A / D | E / Q | Left Shift | Horn on H |
+| WS drive, arrow steer (the default) | W / S | Left / Right | A / Z | Left Alt | |
+| Arrow drive | Up / Down | Left / Right | E / Q | Left Shift | Horn on H |
+| AZERTY | Z / S | Q / D | E / A | Left Shift | Horn on H, menu left trigger on W |
+| QWERTZ | W / S | A / D | E / Q | Left Shift | Horn on H, menu left trigger on Y, menu Y button on Z |
+
+Every other key goes back to its default. Changing a key afterwards makes the preset row say Custom. The same keys are in the ini's `[Keyboard]` section, which takes any key and more than one per action.
 
 ## Installing
 
@@ -88,7 +101,7 @@ To remove it, delete `fh2-mods\FH2Mouse.dll` and the `FH2Mouse` folder.
 
 ## Settings
 
-`FH2Mouse\FH2Mouse.ini` (read when the game starts):
+`FH2Mouse\FH2Mouse.ini` (read when the game starts; `HoverSelects`, `FreeLook` and `FreeLookSensitivity` can also be set on the Keyboard & Mouse page):
 
 | Setting | Default | Meaning |
 |---|---|---|
@@ -96,14 +109,15 @@ To remove it, delete `fh2-mods\FH2Mouse.dll` and the `FH2Mouse` folder.
 | `HoverSelects` | `1` | Moving over something selects it. With `0`, only clicks do |
 | `HideAfterSeconds` | `3` | Hide the cursor after this long without moving the mouse (`0` = never) |
 | `FreeLook` | `1` | While driving, the mouse looks around. `0` leaves the mouse alone while driving |
+| `FreeLookSensitivity` | `50` | How fast free look turns, `0` to `100`: `50` is the usual speed, `100` twice as fast, `0` doesn't turn |
 | `FrameRate` | `0` | The game's frame rate: `0` measures it (`platform.log` says what it found). Set it (`30`, `60`, `120`, `144`...) only if photo mode or the garage camera turns too fast or too slow |
 | `Debug` | `0` | Log what's under the cursor and every click to `fh2-mods\platform.log` |
 
-The `[Keyboard]` section (added to an older ini the first time this version starts) gives each action one or more keys, separated by spaces: `Gas=W Up`, `LookLeft=Q`, `Map=None`. Keys are letters, digits, `F1`-`F24`, `Num0`-`Num9` (with Num Lock on), `Left` `Right` `Up` `Down`, `Space`, `Enter`, `Escape`, `Tab`, `Backspace`, `Insert`, `Delete`, `Home`, `End`, `PageUp`, `PageDown`, `Shift`/`LShift`/`RShift`, `Ctrl`/`LCtrl`/`RCtrl`, `Alt`/`LAlt`/`RAlt`, `Comma`, `Period`, `Minus`, `Equals`, `Semicolon`, `Slash`, `Grave`, `LBracket`, `Backslash`, `RBracket`, `Quote`, or a virtual-key code (`0xNN`). The actions are `Gas`, `Brake`, `SteerLeft`, `SteerRight`, `Handbrake`, `ShiftUp`, `ShiftDown`, `Clutch`, `Camera`, `LookBack`, `LookLeft`, `LookRight`, `Rewind`, `Map`, `PhotoMode`, `RadioPrevious`, `RadioNext`, `Telemetry`, `Interact`, `Nitro` and `Pause` while driving, and `Accept`, `Back`, `Up`, `Down`, `Left`, `Right`, `PreviousTab`, `NextTab`, `ButtonX`, `ButtonY`, `ButtonView`, `ButtonLT`, `ButtonRT`, `ButtonLS` and `ButtonRS` in the menus. The MODS page offers the usual keys; one set in the ini that isn't among them shows there as it is. `Enabled=0` turns the keys off. `KeyIcons=0` keeps the controller's buttons in the help bar while you play with the keyboard.
+The `[Keyboard]` section (added to an older ini the first time this version starts) gives each action one or more keys, separated by spaces: `Gas=W Up`, `LookLeft=Q`, `Map=None`. Keys are letters, digits, `F1`-`F24`, `Num0`-`Num9` (with Num Lock on), `Left` `Right` `Up` `Down`, `Space`, `Enter`, `Escape`, `Tab`, `Backspace`, `Insert`, `Delete`, `Home`, `End`, `PageUp`, `PageDown`, `Shift`/`LShift`/`RShift`, `Ctrl`/`LCtrl`/`RCtrl`, `Alt`/`LAlt`/`RAlt`, `Comma`, `Period`, `Minus`, `Equals`, `Semicolon`, `Slash`, `Grave`, `LBracket`, `Backslash`, `RBracket`, `Quote`, or a virtual-key code (`0xNN`). The actions are `Gas`, `Brake`, `SteerLeft`, `SteerRight`, `Handbrake`, `ShiftUp`, `ShiftDown`, `Clutch`, `Camera`, `LookBack`, `LookLeft`, `LookRight`, `Rewind`, `Map`, `PhotoMode`, `RadioPrevious`, `RadioNext`, `Telemetry`, `Interact`, `Nitro`, `Horn`, `SignalLeft`, `SignalRight`, `Hazards`, `Headlights` and `Pause` while driving, and `Accept`, `Back`, `Up`, `Down`, `Left`, `Right`, `PreviousTab`, `NextTab`, `ButtonX`, `ButtonY`, `ButtonView`, `ButtonLT`, `ButtonRT`, `ButtonLS` and `ButtonRS` in the menus. `SignalLeft`, `SignalRight`, `Hazards` and `Headlights` press Extra Options' own actions: each holds the controller buttons Extra Options' `[Bindings]` gives it (`SignalLeftXbox=DPadLeft`), as Extra Options reads them, but not for the game, so the indicators don't change the radio. A tap of an indicator key holds it 0.65 s, as Extra Options wants a 0.5 s hold. Without `FH2_ExtraOptions.ini` next to `azimuth.exe` their rows don't show. The Keyboard & Mouse page offers the usual keys; one set in the ini that isn't among them shows there as it is. `Enabled=0` turns the keys off. `KeyIcons=0` keeps the controller's buttons in the help bar while you play with the keyboard.
 
-The key pictures are built into `FH2Mouse.dll`: one PNG per key, named as the ini names keys (`Enter.png`, `Escape.png`, `PageUp.png`, `A.png`; `UpDown.png` and `LeftRight.png` for the d-pad's both-ways pictures). A key without one, like a key the ini sets that the MODS page doesn't offer, is drawn. To use a picture of your own, put a PNG with that name in `FH2Mouse\KeyIcons` (any size, with transparency); the game shows it from its next start, and deleting it brings back the built-in one. A picture can be up to four times as wide as it is high, like the built-in Enter, Space and Shift: the help bar makes room for it, and where a page only has a square for the button (the title screen's PRESS (A) TO START, the HUD's prompts, the tab strips' LB / RB) it's shrunk to fit the square. The game's copies are made from them each start, in `mediaoverride\UI\textures\data_bound\FH2MouseKeys`, so don't edit those.
+The key pictures are built into `FH2Mouse.dll`: one PNG per key, named as the ini names keys (`Enter.png`, `Escape.png`, `PageUp.png`, `A.png`; `UpDown.png` and `LeftRight.png` for the d-pad's both-ways pictures). A key without one, like a key the ini sets that the Keyboard & Mouse page doesn't offer, is drawn. To use a picture of your own, put a PNG with that name in `FH2Mouse\KeyIcons` (any size, with transparency); the game shows it from its next start, and deleting it brings back the built-in one. A picture can be up to four times as wide as it is high, like the built-in Enter, Space and Shift: the help bar makes room for it, and where a page only has a square for the button (the title screen's PRESS (A) TO START, the HUD's prompts, the tab strips' LB / RB) it's shrunk to fit the square. The game's copies are made from them each start, in `mediaoverride\UI\textures\data_bound\FH2MouseKeys`, so don't edit those.
 
-The keys' rows need FH2 Mod Platform 2.8.0 or later (the one in the release zip); with an older one the keys work, set in the ini.
+The keys' rows need FH2 Mod Platform 2.8.0 or later (the one in the release zip); with an older one the keys work, set in the ini. They're the platform's Mods page rows, shown on a page of their own: if the Settings page or the game's code isn't as expected (`platform.log` says so), there's no Keyboard & Mouse tile and they stay on the MODS pages (MODS and MODS > Installed mods). Otherwise they're only on Keyboard & Mouse.
 
 ## Known limits
 
