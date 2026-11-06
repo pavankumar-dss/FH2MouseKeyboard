@@ -9,6 +9,7 @@
 // Pages then behave exactly as they do with a controller.
 #include "fh2mod.h"
 #include "key_art.h"
+#include "lang.h"
 
 #include <windows.h>
 #include <wincodec.h>
@@ -206,7 +207,7 @@ const Action kActions[] = {
     {"ShiftUp", "Shift up", "A", 4, 1, 0, false},
     {"ShiftDown", "Shift down", "Z", 5, 1, 0, false},
     {"Clutch", "Clutch", "LAlt", 6, 1, 0, false},
-    {"Camera", "Change camera", "C", 17, 1, 0, false},
+    {"Camera", "Change camera", "V", 17, 1, 0, false},   // C is FH2 ANNA's (as FH3's)
     {"LookBack", "Look back", "RCtrl", 10, 1, 0, false},
     {"LookLeft", "Look left", "None", 11, 1, 0, false},
     {"LookRight", "Look right", "None", 12, 1, 0, false},
@@ -232,6 +233,12 @@ const Action kActions[] = {
     {"SignalRight", "Right indicator", "RBracket", -1, 0, 0, false, 0, 650, "SignalRight"},
     {"Hazards", "Hazard lights", "G", -1, 0, 0, false, 0, 0, "Hazards"},
     {"Headlights", "Headlights", "L", -1, 0, 0, false, 0, 0, "Headlights"},
+    // FH2 ANNA's keys (FH3's): they press its d-pad buttons, see "FH2 ANNA" (anna_pad_bits).
+    {"AnnaOpen", "ANNA: open / close", "C", -1, 0, 0, false},
+    {"AnnaUp", "ANNA: up", "I", -1, 0, 0, false},
+    {"AnnaDown", "ANNA: down", "K", -1, 0, 0, false},
+    {"AnnaBack", "ANNA: back", "J", -1, 0, 0, false},
+    {"AnnaChoose", "ANNA: choose", "L", -1, 0, 0, false},
     // The menu's keys hold the pad's buttons too (Start, A, B, the d-pad), so every menu takes them
     // as it takes the pad's; the key is what's pressed instead if that can't be done.
     {"Pause", "Pause", "Escape", -1, 0, KEY_PAUSE, false, 0x10ull},
@@ -259,6 +266,15 @@ constexpr int kActionCount = sizeof kActions / sizeof kActions[0];
 constexpr int kMaxKeys     = 4;
 bool g_keyboard            = true;
 bool g_key_icons_on        = true;   // the help bar shows the keys while they're used (see "Key icons")
+// FH2 ANNA's interface (its include/fh2anna.h): ANNA, on the HUD, works with the pad only; its
+// keys are ours, pressing its d-pad buttons (see "FH2 ANNA").
+struct FH2AnnaApi {
+    uint32_t size;
+    int (*is_open)(void);
+    int (*uses_key)(uint32_t vk);   // always 0 now
+};
+const FH2AnnaApi* g_anna = nullptr;
+bool is_anna_action(const char* name) { return !std::strncmp(name, "Anna", 4); }
 bool g_extra_options       = false;  // Extra Options' ini is there (see "Extra Options' keys")
 bool g_kbm_rows            = false;  // the rows are on the Mods page (API 9), for Settings > Keyboard & Mouse
 std::atomic<bool> g_icons_stale{false};   // the help bar on screen is to be shown again
@@ -365,7 +381,20 @@ const char* const kKeyChoices[] = {
 };
 constexpr std::size_t kMaxChoices = 32;
 std::array<std::vector<std::string>, kActionCount> g_row_choices;   // what each row offers
-std::vector<std::pair<std::string, std::string>> g_row_names;       // our rows: label, key
+std::vector<std::pair<std::string, std::string>> g_row_names;       // our rows: label (as the XAML has it), key
+
+// Text for the pages' XAML (as the platform escapes our labels).
+std::string xml_escape(const std::string& s) {
+    std::string o;
+    for (char c : s) switch (c) {
+            case '&': o += "&amp;"; break;
+            case '<': o += "&lt;"; break;
+            case '>': o += "&gt;"; break;
+            case '"': o += "&quot;"; break;
+            default: o += c;
+        }
+    return o;
+}
 
 // Presets: every action's keys at once. Each gives the keys that differ from kActions' defaults
 // (which are the second, the mod's own layout); picking one sets all of them. They're all
@@ -487,45 +516,45 @@ void keyboard_row_changed(void*, const char* key, int value) {
 void add_keyboard_rows() {
     if (g_api->api_version < 9) return;
     auto add_row = [](const FH2Setting& s) {
-        if (g_api->add_setting(g_mod, &s)) g_row_names.emplace_back(s.label, s.key);
+        if (g_api->add_setting(g_mod, &s)) g_row_names.emplace_back(xml_escape(s.label), s.key);   // as the page has it
     };
     FH2Setting on{};
     on.size        = sizeof on;
     on.key         = "Keyboard";
-    on.label       = "Keyboard controls";
-    on.description = "Drive with the keyboard and move around the menus with it. The rows below set the keys.";
+    on.label       = lang::tr("Keyboard controls");
+    on.description = lang::tr("Drive with the keyboard and move around the menus with it. The rows below set the keys.");
     on.value       = g_keyboard;
     on.on_change   = keyboard_row_changed;
     add_row(on);
     FH2Setting icons{};
     icons.size        = sizeof icons;
     icons.key         = "KeyIcons";
-    icons.label       = "Keyboard icons";
-    icons.description = "While you play with the keyboard, the help bar shows its keys instead of the controller's buttons. A button on the controller brings the buttons back.";
+    icons.label       = lang::tr("Keyboard icons");
+    icons.description = lang::tr("While you play with the keyboard, the help bar shows its keys instead of the controller's buttons. A button on the controller brings the buttons back.");
     icons.value       = g_key_icons_on;
     icons.on_change   = keyboard_row_changed;
     add_row(icons);
     FH2Setting hover{};
     hover.size        = sizeof hover;
     hover.key         = "HoverSelects";
-    hover.label       = "Mouse hover selects";
-    hover.description = "Moving the mouse over a button, list row or slider selects it. Off, only a click does.";
+    hover.label       = lang::tr("Mouse hover selects");
+    hover.description = lang::tr("Moving the mouse over a button, list row or slider selects it. Off, only a click does.");
     hover.value       = g_cfg.hover_focus;
     hover.on_change   = keyboard_row_changed;
     add_row(hover);
     FH2Setting look{};
     look.size        = sizeof look;
     look.key         = "FreeLook";
-    look.label       = "Mouse free look";
-    look.description = "While driving, moving the mouse looks around. The cursor stays in the game's window: Alt+Tab to leave it.";
+    look.label       = lang::tr("Mouse free look");
+    look.description = lang::tr("While driving, moving the mouse looks around. The cursor stays in the game's window: Alt+Tab to leave it.");
     look.value       = g_cfg.free_look;
     look.on_change   = keyboard_row_changed;
     add_row(look);
     FH2Setting speed{};
     speed.size         = sizeof speed;
     speed.key          = "FreeLookSensitivity";
-    speed.label        = "Mouse free look sensitivity";
-    speed.description  = "How far the camera turns for the mouse's movement while you look around. 50 is the usual, 100 twice as far, 0 not at all.";
+    speed.label        = lang::tr("Mouse free look sensitivity");
+    speed.description  = lang::tr("How far the camera turns for the mouse's movement while you look around. 50 is the usual, 100 twice as far, 0 not at all.");
     speed.kind         = FH2_SETTING_SLIDER;
     speed.min          = 0;
     speed.max          = 100;
@@ -536,14 +565,14 @@ void add_keyboard_rows() {
     add_row(speed);
     g_kbm_rows = true;
     static std::vector<const char*> preset_names;
-    for (const Preset& p : kPresets) preset_names.push_back(p.name);
-    preset_names.push_back("Custom");
+    for (const Preset& p : kPresets) preset_names.push_back(lang::tr(p.name));
+    preset_names.push_back(lang::tr("Custom"));
     g_preset = matching_preset(-1);
     FH2Setting preset{};
     preset.size         = sizeof preset;
     preset.key          = "Preset";
-    preset.label        = "Keyboard preset";
-    preset.description  = "Sets every key below at once. WS drive, arrow steer is the mod's own layout; AZERTY and QWERTZ put the keys where WASD's are on those keyboards. Changing a key makes it Custom.";
+    preset.label        = lang::tr("Keyboard preset");
+    preset.description  = lang::tr("Sets every key below at once. WS drive, arrow steer is the mod's own layout; AZERTY and QWERTZ put the keys where WASD's are on those keyboards. Changing a key makes it Custom.");
     preset.kind         = FH2_SETTING_CHOICE;
     preset.choices      = preset_names.data();
     preset.choice_count = static_cast<uint32_t>(preset_names.size());
@@ -555,11 +584,14 @@ void add_keyboard_rows() {
                        INVALID_FILE_ATTRIBUTES;
     const bool horn = GetFileAttributesW((std::wstring(g_api->azimuth_dir) + L"\\fh2-mods\\HonkHonk.dll").c_str()) !=
                       INVALID_FILE_ATTRIBUTES;
+    const bool anna = GetFileAttributesW((std::wstring(g_api->azimuth_dir) + L"\\fh2-mods\\FH2ANNA.dll").c_str()) !=
+                      INVALID_FILE_ATTRIBUTES;
     for (int i = 0; i < kActionCount; ++i) {
         const Action& a = kActions[i];
         if (!std::strcmp(a.name, "Nitro") && !nitro) continue;
         if (!std::strcmp(a.name, "Horn") && !horn) continue;
         if (a.extra && !g_extra_options) continue;
+        if (is_anna_action(a.name) && !anna) continue;
         auto& choices = g_row_choices[i];
         auto offer    = [&](const std::string& c) {
             if (choices.size() < kMaxChoices &&
@@ -574,14 +606,16 @@ void add_keyboard_rows() {
         std::vector<const char*> names;
         for (const std::string& c : choices) names.push_back(c.c_str());
         keys[i]   = std::string("Key_") + a.name;
-        labels[i] = a.label;
+        labels[i] = lang::tr(a.label);
         FH2Setting s{};
         s.size         = sizeof s;
         s.key          = keys[i].c_str();
         s.label        = labels[i].c_str();
-        s.description  = a.menu  ? "The key for this in the menus. It does nothing while driving, so it can be a driving key too."
+        s.description  = lang::tr(is_anna_action(a.name)
+                             ? "FH2 ANNA's key while driving, pressing the controller's d-pad for it. The open key is ANNA's whenever you drive, the others only while ANNA's menu is open: a driving key on the same key waits till then."
+                         : a.menu  ? "The key for this in the menus. It does nothing while driving, so it can be a driving key too."
                          : a.extra ? "The key for this while driving: Extra Options' own, pressed on the controller button its ini gives it. It does nothing in the menus, so it can be a menu key too."
-                                   : "The key for this while driving. It does nothing in the menus, so it can be a menu key too.";
+                                   : "The key for this while driving. It does nothing in the menus, so it can be a menu key too.");
         s.kind         = FH2_SETTING_CHOICE;
         s.choices      = names.data();
         s.choice_count = static_cast<uint32_t>(names.size());
@@ -1272,9 +1306,87 @@ uint16_t extra_pad_bits() {
     return bits;
 }
 
+// ---- FH2 ANNA ----------------------------------------------------------------------------------
+// FH2 ANNA (fh2-mods\FH2ANNA.dll) reads only the pad, from the game's input after its update, as
+// we hold buttons in it: its keys hold its d-pad buttons, as the pad would press them.
+//  - Open: a tap of D-pad down (ANNA's; held 250 ms it's the telemetry's), 100 ms however long
+//    the key is held. Open, it backs out instead: D-pad left, tapped till ANNA has closed.
+//  - Up, down, back, choose: the d-pad's up, down, left, right, held with the key, only while
+//    ANNA is open (else they'd be the radio's and the telemetry's).
+// While driving, the open key is ANNA's, and the others while it's open: the driving keys on the
+// same keys don't count then (anna_key).
+constexpr int kAnnaKeyCount = 5;
+const char* const kAnnaActions[kAnnaKeyCount] = {"AnnaOpen", "AnnaUp", "AnnaDown", "AnnaBack", "AnnaChoose"};
+constexpr uint64_t kPadUp = 0x140000001ull, kPadDown = 0x140000002ull, kPadLeft = 0xC0000004ull, kPadRight = 0xC0000008ull;
+
+int anna_action(int a) {
+    static int index[kAnnaKeyCount] = {-2, -2, -2, -2, -2};
+    if (index[a] == -2) {
+        index[a] = -1;
+        for (int i = 0; i < kActionCount; ++i)
+            if (!std::strcmp(kActions[i].name, kAnnaActions[a])) index[a] = i;
+    }
+    return index[a];
+}
+
+bool anna_open() {
+    const FH2AnnaApi* anna = g_anna;
+    return anna && anna->is_open();
+}
+
+// The key is ANNA's now (for the driving keys).
+bool anna_key(int vk) {
+    if (!g_anna || !vk) return false;
+    const bool open = anna_open();
+    for (int a = 0; a < kAnnaKeyCount; ++a) {
+        const int i = anna_action(a);
+        if (i < 0 || (a > 0 && !open)) continue;
+        for (int k : g_action_keys[i])
+            if (k == vk) return true;
+    }
+    return false;
+}
+
+// The d-pad buttons ANNA's keys hold this frame (the input update's thread).
+uint64_t anna_pad_bits() {
+    if (!g_anna) return 0;
+    static bool was[kAnnaKeyCount] = {};
+    static DWORD open_until = 0, close_until = 0;
+    static int close_frame  = 0;
+    bool now[kAnnaKeyCount];
+    for (int a = 0; a < kAnnaKeyCount; ++a) {
+        const int i = anna_action(a);
+        now[a]      = i >= 0 && g_held[i].load();
+    }
+    const DWORD t   = GetTickCount();
+    const bool open = anna_open();
+    if (now[0] && !was[0]) {
+        if (open) close_until = t + 1500, close_frame = 0;
+        else open_until = t + 100;
+    }
+    for (int a = 0; a < kAnnaKeyCount; ++a) was[a] = now[a];
+    uint64_t bits = 0;
+    if (open_until) {
+        if (static_cast<LONG>(open_until - t) > 0) bits |= kPadDown;
+        else open_until = 0;
+    }
+    if (close_until) {
+        if (!open || static_cast<LONG>(close_until - t) <= 0) close_until = 0;
+        else if ((close_frame++ / 3) % 2 == 0) bits |= kPadLeft;   // 3 frames down, 3 up: a tap each
+        return bits;
+    }
+    if (open) {
+        if (now[1]) bits |= kPadUp;
+        if (now[2]) bits |= kPadDown;
+        if (now[3]) bits |= kPadLeft;
+        if (now[4]) bits |= kPadRight;
+    }
+    return bits;
+}
+
 // The pad's buttons the keys (and a help bar click) hold.
 uint64_t keys_pad_bits() {
-    uint64_t bits = 0;
+    uint64_t bits = anna_pad_bits();
     for (int i = 0; i < kActionCount; ++i)
         if (kActions[i].pad && g_held[i].load()) bits |= kActions[i].pad;
     if (const uint64_t click = g_click_bits.load()) {
@@ -1906,7 +2018,7 @@ void write_key(const std::string& name, const std::string& key, const uint8_t* g
 // Every key an action can be given on the Mods page, and those the ini gives them: the pictures
 // the game will load (it doesn't see files that come later), written before it starts.
 void write_key_icons() {
-    std::vector<int> vks;
+    std::vector<int> vks;   // FH2 ANNA's among them: its HUD shows its keys (FH2MouseKeys/Key_43...)
     for (const char* c : kKeyChoices)
         if (const int vk = vk_of(c)) vks.push_back(vk);
     for (const auto& keys : g_action_keys)
@@ -2163,6 +2275,95 @@ bool swap_shared_icons() {
     return true;
 }
 
+// FH2 ANNA's two buttons on the HUD (D-pad down that opens it, D-pad right that chooses) are
+// BitmapImages of its own, resources of its control (HUDAnnaControl) named FH2ANNA_Icon_Open and
+// FH2ANNA_Icon_Choose: found from the control (searched for from the top of the window the active
+// one is in) and pointed at the ANNA keys' pictures as the shared ones are. A new HUD is a new
+// control: one only we hold is gone, and searched for again.
+struct AnnaIcon {
+    const char* name;
+    int action;                   // its key's (kAnnaActions)
+    uint8_t* image   = nullptr;   // a reference of ours
+    uint8_t* pad_uri = nullptr;   // ditto
+};
+AnnaIcon g_anna_icons[] = {{"FH2ANNA_Icon_Open", 0}, {"FH2ANNA_Icon_Choose", 4}};
+uint8_t* g_anna_control = nullptr;   // a reference of ours (UI thread only)
+
+uint8_t* find_by_type(uint8_t* v, const char* rtti, int depth, int& visited) {
+    if (!v || depth > 80 || ++visited > 30000) return nullptr;
+    if (!is(type_of(v), TYPE_VISUAL)) return nullptr;
+    if (!std::strcmp(rtti_name(v), rtti)) return v;
+    const int n = vfn<CountFn>(v, VT_CHILD_COUNT)(v);
+    for (int i = 0; i < n && i < 4096; ++i)
+        if (uint8_t* f = find_by_type(vfn<ChildFn>(v, VT_CHILD)(v, i), rtti, depth + 1, visited)) return f;
+    return nullptr;
+}
+
+void drop_anna_icons() {
+    for (AnnaIcon& s : g_anna_icons) {
+        release(s.image), release(s.pad_uri);
+        s.image = s.pad_uri = nullptr;
+    }
+    release(g_anna_control);
+    g_anna_control = nullptr;
+}
+
+bool find_anna_icons() {
+    uint8_t* root = active_window();
+    for (int up = 0; root && up < 200; ++up) {
+        uint8_t* parent = at<uint8_t*>(root, VISUAL_PARENT);
+        if (!parent) break;
+        root = parent;
+    }
+    int visited       = 0;
+    uint8_t* control  = root ? find_by_type(root, ".?AVHUDAnnaControl@@", 0, visited) : nullptr;
+    if (!control) return false;
+    for (AnnaIcon& s : g_anna_icons) {
+        auto* text = new uint8_t[0x80]();   // kept: the game may hold on to what it's asked with
+        game<AvuiStringFn>(RVA_AVUI_STRING)(text, s.name, -1);
+        InterlockedIncrement(reinterpret_cast<volatile LONG*>(text + 0x10));
+        uint8_t* image = o_find_resource(control, text);
+        if (!image || std::strcmp(rtti_name(image), ".?AVBitmapImage@AVUI@@")) continue;
+        if (!(s.pad_uri = uri_of(image))) continue;
+        InterlockedIncrement(reinterpret_cast<volatile LONG*>(image + 0x10));
+        s.image = image;
+    }
+    InterlockedIncrement(reinterpret_cast<volatile LONG*>(control + 0x10));
+    g_anna_control = control;
+    static bool told = false;
+    if (!told) told = true, logf("FH2 ANNA's HUD: its buttons %s", g_anna_icons[0].image && g_anna_icons[1].image ? "show the keys" : "aren't as expected");
+    return true;
+}
+
+void anna_icons_frame(bool stale) {
+    if (!g_anna || !g_shared_ok) return;
+    if (g_anna_control && at<LONG>(g_anna_control, 0x10) <= 1) drop_anna_icons();   // the HUD's gone
+    if (!g_anna_control) {
+        static DWORD tried = 0;
+        if (tried && GetTickCount() - tried < 2000) return;
+        tried = GetTickCount();
+        if (!find_anna_icons()) return;
+        stale = true;
+    }
+    if (!stale) return;
+    void* dp = at<void*>(g_base, RVA_URI_SOURCE_DP);
+    static std::vector<std::pair<std::string, uint8_t*>> uris;   // our pictures' Uris, kept
+    for (const AnnaIcon& s : g_anna_icons) {
+        if (!s.image) continue;
+        uint8_t* uri  = s.pad_uri;
+        const int i   = anna_action(s.action);
+        const int vk  = i >= 0 ? g_action_keys[i][0] : 0;
+        std::string file = vk ? key_file(vk) : std::string();
+        if (keys_shown() && !file.empty() && std::find(g_key_files.begin(), g_key_files.end(), file) != g_key_files.end()) {
+            if (key_aspect(file) > 1) file += "_Sq";   // it's a square
+            auto it = std::find_if(uris.begin(), uris.end(), [&](const auto& u) { return u.first == file; });
+            if (it == uris.end()) uris.emplace_back(file, uri_of(key_image(file))), it = uris.end() - 1;
+            if (it->second) uri = it->second;
+        }
+        if (uri) game<SetValueFn>(RVA_SET_VALUE)(s.image, dp, uri);
+    }
+}
+
 // The activate buttons that showed a picture lately, each with a reference of ours, to show them
 // again when the device changes: they're in the HUD, not under the active window. One only we
 // hold is gone from the screen, and let go.
@@ -2267,7 +2468,9 @@ void icons_frame() {
     }
     if (keys && !g_keys_last.load()) g_keys_last = true, g_icons_stale = true;
     else if (pad && !keys && g_keys_last.load()) g_keys_last = false, g_icons_stale = true;
-    if (!g_icons_stale.exchange(false)) return;
+    const bool stale = g_icons_stale.exchange(false);
+    anna_icons_frame(stale);
+    if (!stale) return;
     if (g_cfg.debug) logf("key icons: %s", keys_shown() ? "keys" : "the pad's buttons");
     if (!swap_shared_icons()) g_icons_stale = true;   // again next frame
     int visited = 0;
@@ -3371,7 +3574,8 @@ void keyboard_frame() {
         const Action& a = kActions[i];
         bool now        = false;
         if (front)
-            for (int vk : g_action_keys[i]) now = now || (vk && (GetAsyncKeyState(vk) & 0x8000));
+            for (int vk : g_action_keys[i])
+                now = now || (vk && (GetAsyncKeyState(vk) & 0x8000) && (a.menu || is_anna_action(a.name) || !anna_key(vk)));
         // A press counts where it's made: Esc that closes the map doesn't pause the drive it
         // leads back to, though a key held into the drive (W) does drive.
         // A key that holds a pad button holds it only from a press made here, until it's let go
@@ -3612,7 +3816,23 @@ constexpr uintptr_t RVA_HUD_SCENE_RECORD  = 0x0B3A3E0;   // SceneRecord* build(S
 
 constexpr char kModName[]    = "FH2 Mouse & Keyboard";
 constexpr char kOurSuffix[]  = " (FH2 Mouse &amp; Keyboard)\"";   // the end of our rows' descriptions
-constexpr char kTileTitle[]  = "KEYBOARD &amp; MOUSE";
+// The tile's title, in the game's language now. The Settings page's XAML isn't read as UTF-8
+// (the platform's Mods page is), so what isn't ASCII goes as character references (&#x9375;).
+std::string tile_title() {
+    const std::string s = xml_escape(lang::tr("KEYBOARD & MOUSE"));
+    const int n         = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
+    std::wstring w(n > 0 ? n : 0, L'\0');
+    if (n > 0) MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), w.data(), n);
+    std::string o;
+    for (std::size_t i = 0; i < w.size(); ++i) {
+        uint32_t c = w[i];
+        if (c >= 0xD800 && c < 0xDC00 && i + 1 < w.size()) c = 0x10000 + ((c - 0xD800) << 10) + (w[++i] - 0xDC00);
+        char ref[16];
+        if (c < 0x80) o += static_cast<char>(c);
+        else o.append(ref, static_cast<std::size_t>(std::snprintf(ref, sizeof ref, "&#x%X;", c)));
+    }
+    return o;
+}
 
 struct XamlResource {
     void** vtable;
@@ -3717,7 +3937,7 @@ bool replace_resource(void** out, const std::string& text) {
 // (Paths in the light grey of the game's icons); Controls the game's own wide picture, its right
 // half (the pad) in a square.
 const char kTileResources[] = R"X(
-            <local:TileMenuDataItem x:Key="FH2Mouse_MenuDataItem_Kbm" Heading="KEYBOARD &amp; MOUSE" Icon="" />
+            <local:TileMenuDataItem x:Key="FH2Mouse_MenuDataItem_Kbm" Heading="FH2MOUSE_TILE_TITLE" Icon="" />
             <ControlTemplate x:Key="FH2Mouse_Template_Kbm" TargetType="{x:Type Button}">
                 <Grid Style="{StaticResource A_Style_FrameworkElement_DefaultTransition}" local:UIPageTransitionManager.TransitionIndex="{Binding (local:UIPageTransitionManager.TransitionIndex), RelativeSource={RelativeSource TemplatedParent}}">
                     <Grid Style="{StaticResource A_Style_Grid_HiddenWhenLocked}">
@@ -3791,7 +4011,9 @@ bool add_settings_tile(std::string& page) {
         !replace_once(el, "A_ControlTemplate_HorizontalImageTile", "FH2Mouse_Template_Controls"))
         return false;
     page.replace(a, b + 2 - a, el + kTileButton);
-    page.insert(item_end + 1, kTileResources);
+    std::string resources = kTileResources;
+    replace_once(resources, "FH2MOUSE_TILE_TITLE", tile_title());
+    page.insert(item_end + 1, resources);
     return true;
 }
 
@@ -3940,7 +4162,7 @@ bool filter_mods_page(std::string& page, bool ours) {
     page.replace(l + 1, le - (l + 1), kept);
     if (ours) {
         g_open_props = props;
-        replace_once(page, "Content=\"ALL SETTINGS\"", std::string("Content=\"") + kTileTitle + "\"");
+        replace_once(page, "Content=\"ALL SETTINGS\"", "Content=\"" + tile_title() + "\"");
         while (replace_once(page, kOurSuffix, "\"")) {}   // the descriptions needn't say whose they are
     }
     return true;
@@ -4127,6 +4349,7 @@ void hook_settings_tile() {
 DWORD WINAPI start(LPVOID) {
     g_base = static_cast<uint8_t*>(g_api->wait_for_code(0xFFFFFFFFu));
     if (!g_base || !code_matches()) return 0;
+    lang::set_base(g_base);   // the game's language from now on (see lang.h)
     void** slot = reinterpret_cast<void**>(g_base + RVA_UI_UPDATE_SLOT);
     if (!g_api->hook_pointer(g_mod, "UserInterface::Update", slot, reinterpret_cast<void*>(&detour_update),
                              reinterpret_cast<void**>(&o_update)) ||
@@ -4215,9 +4438,9 @@ DWORD WINAPI start(LPVOID) {
         g_api->enable_hooks(g_mod, nullptr);
     else
         logf("the UI's input isn't as expected: when a pad goes, the game waits for one");
-    // The keys that hold the pad's own buttons (the radio): optional.
-    static const uint8_t update_bytes[] = {0x48, 0x8B, 0xC4, 0x48, 0x89, 0x48, 0x08, 0x55, 0x56, 0x57, 0x41, 0x54};
-    if (o_get_digital && !std::memcmp(g_base + RVA_INPUT_UPDATE, update_bytes, sizeof update_bytes) &&
+    // The keys that hold the pad's own buttons (the radio): optional. Not checked here: FH2 ANNA may
+    // have hooked it already (the platform checks the game's bytes, and shares the function).
+    if (o_get_digital &&
         g_api->hook_function(g_mod, "input update", g_base + RVA_INPUT_UPDATE, reinterpret_cast<void*>(&input_update),
                              reinterpret_cast<void**>(&o_input_update)))
         g_api->enable_hooks(g_mod, nullptr);
@@ -4250,6 +4473,9 @@ DWORD WINAPI start(LPVOID) {
     hook_horn();
     hook_key_icons();   // last: it enables what it hooked only when all of it is
     hook_settings_tile();   // after every enable_hooks(g_mod, nullptr): it enables its own only if all of them are made
+    // FH2 ANNA (its interface, once every mod has started): the keys it takes, the keys don't do.
+    if (g_api->api_version >= 2 && g_api->wait_for_mods(60000))
+        if ((g_anna = static_cast<const FH2AnnaApi*>(g_api->get_interface("FH2ANNA", 1)))) logf("FH2 ANNA is here: the ANNA keys work it");
     g_arrow = LoadCursorW(nullptr, IDC_ARROW);
     if (HANDLE t = CreateThread(nullptr, 0, window_thread, nullptr, 0, nullptr)) CloseHandle(t);
     if (HANDLE t = CreateThread(nullptr, 0, hook_thread, nullptr, 0, nullptr)) CloseHandle(t);
@@ -4264,6 +4490,7 @@ FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
     g_api = api;
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                        reinterpret_cast<LPCWSTR>(&fh2mod_init), &g_self);
+    lang::init(std::wstring(api->azimuth_dir) + L"\\FH2Mouse\\FH2Mouse.ini");   // the rows' language: the one seen last
     FH2ModInfo info{};
     info.size             = sizeof info;
     info.name             = kModName;   // the Mods page ends our rows' descriptions with it (kOurSuffix)
@@ -4271,7 +4498,7 @@ FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
     info.github_repo      = "qiangqiang101/FH2MouseKeyboard";
     info.platform_version = FH2MOD_PLATFORM_VERSION;
     info.check_updates    = 1;
-    info.description      = "Drive with the keyboard, point at things in the menus and click them, drag the map, turn the garage camera, place decals with the keyboard, and fly the photo mode camera, all without picking up a controller.";
+    info.description      = lang::tr("Drive with the keyboard, point at things in the menus and click them, drag the map, turn the garage camera, place decals with the keyboard, and fly the photo mode camera, all without picking up a controller.");
     g_mod                 = api->register_mod(&info);
     if (!g_mod) return 1;
     load_settings();
