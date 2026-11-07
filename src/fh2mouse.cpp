@@ -513,6 +513,258 @@ void keyboard_row_changed(void*, const char* key, int value) {
     }
 }
 
+// ---- the controller's layout ([Controller], on the Keyboard & Mouse page) -----------------------
+// A real controller's buttons come from the layout picked in Settings > Controls: a row of the
+// game's ControllerLayouts table, with a column for each button holding the name of the action on
+// it ("Gas", "ShiftUp", "" for none). With the custom layout on, the game reads the ini's buttons
+// instead (see "The custom controller layout" for how). The layouts don't hold the rest: the left
+// stick's left / right steers, Menu pauses, and the HUD's prompts ("Enter garage", control 21) are
+// on X with an automatic gearbox and View with a manual one, whatever the layout.
+struct PadButton {
+    const char* column;   // ControllerLayouts' column, and the ini's name
+    const char* label;    // on the Keyboard & Mouse page
+    int input;            // the game's number for it (what its button state takes)
+    const char* stock;    // layout 1's action (ControllerLayouts' first row)
+};
+// In the game's column table's order (game+0x1E09C48).
+const PadButton kPadButtons[] = {
+    {"LeftThumbUp", "Controller: left stick up", 19, ""},
+    {"LeftThumbDown", "Controller: left stick down", 20, ""},
+    {"LeftThumbButton", "Controller: left stick click", 6, ""},
+    {"RightThumbUp", "Controller: right stick up", 26, "LookForward"},
+    {"RightThumbDown", "Controller: right stick down", 27, "LookBack"},
+    {"RightThumbLeft", "Controller: right stick left", 28, "LookLeft"},
+    {"RightThumbRight", "Controller: right stick right", 29, "LookRight"},
+    {"RightThumbButton", "Controller: right stick click", 7, ""},
+    {"DPadUp", "Controller: d-pad up", 0, "PhotoMode"},
+    {"DPadDown", "Controller: d-pad down", 1, "Telemetry"},
+    {"DPadLeft", "Controller: d-pad left", 2, "RadioLeft"},
+    {"DPadRight", "Controller: d-pad right", 3, "RadioRight"},
+    {"ButtonA", "Controller: A", 12, "Handbrake"},
+    {"ButtonB", "Controller: B", 13, "ShiftUp"},
+    {"ButtonX", "Controller: X", 14, "ShiftDown"},
+    {"ButtonY", "Controller: Y", 15, "Rewind"},
+    {"LeftShoulder", "Controller: LB", 8, "Clutch"},
+    {"RightShoulder", "Controller: RB", 9, "SwitchCamera"},
+    {"LeftTrigger", "Controller: LT", 10, "Brake"},
+    {"RightTrigger", "Controller: RT", 11, "Gas"},
+};
+constexpr int kPadButtonCount = sizeof kPadButtons / sizeof kPadButtons[0];
+// The page's order: the face buttons, shoulders and triggers, the d-pad, then the sticks.
+const int kPadRowOrder[kPadButtonCount] = {12, 13, 14, 15, 16, 17, 18, 19, 8, 9, 10, 11, 3, 4, 5, 6, 7, 0, 1, 2};
+
+// What a button can do: the game's names for its actions (its names table, game+0x1E09D80), as the
+// layouts hold them, and Map, which they can't hold (see "The custom controller layout").
+struct PadAction {
+    const char* name;
+    const char* label;
+};
+const PadAction kPadActions[] = {
+    {"", "None"},
+    {"Gas", "Gas"},
+    {"Brake", "Brake / reverse"},
+    {"Handbrake", "Handbrake"},
+    {"ShiftUp", "Shift up"},
+    {"ShiftDown", "Shift down"},
+    {"Clutch", "Clutch"},
+    {"SwitchCamera", "Change camera"},
+    {"LookForward", "Look forward"},
+    {"LookBack", "Look back"},
+    {"LookLeft", "Look left"},
+    {"LookRight", "Look right"},
+    {"Rewind", "Rewind"},
+    {"PhotoMode", "Photo mode"},
+    {"Telemetry", "Telemetry"},
+    {"RadioLeft", "Previous station"},
+    {"RadioRight", "Next station"},
+    {"Map", "Map"},
+};
+// The game's other names a layout can hold, which no layout of its own uses: the ini takes them.
+const char* const kPadOtherActions[] = {"LookStraightBack", "MiniLeaderboard"};
+
+std::mutex g_pad_mx;                                       // guards these four
+bool g_pad_custom = false;                                 // [Controller] Custom
+std::array<std::string, kPadButtonCount> g_pad_action;     // the game's names, "" none
+std::array<std::string, kPadButtonCount> g_game_layout;    // the layout the game loaded last (its own)
+bool g_game_layout_seen = false;
+bool g_pad_rows         = false;                           // the rows are on the page
+bool g_pad_conflict     = false;                           // FH2Controls or CustomBindings sets the layout
+std::atomic<bool> g_pad_apply{false};                      // apply the controls again, next UI frame
+std::array<std::vector<std::string>, kPadButtonCount> g_pad_choices;   // each row's names
+
+// The game's name for an action from the ini's text ("None" and "" are none), or null.
+const char* pad_action_name(const std::string& text) {
+    if (text.empty() || !_stricmp(text.c_str(), "none")) return "";
+    for (const PadAction& a : kPadActions)
+        if (*a.name && !_stricmp(text.c_str(), a.name)) return a.name;
+    for (const char* n : kPadOtherActions)
+        if (!_stricmp(text.c_str(), n)) return n;
+    return nullptr;
+}
+
+void load_controller(const std::wstring& ini) {
+    wchar_t probe[4];
+    if (!GetPrivateProfileSectionW(L"Controller", probe, 4, ini.c_str())) {
+        std::string text = "\r\n; The controller's layout (also on Pause > Settings > Keyboard & Mouse). Custom=0 uses the\r\n"
+                           "; layout picked in Settings > Controls; Custom=1 uses the buttons below instead. Each button\r\n"
+                           "; gets one action: Gas, Brake, Handbrake, ShiftUp, ShiftDown, Clutch, SwitchCamera,\r\n"
+                           "; LookForward, LookBack, LookLeft, LookRight, Rewind, PhotoMode, Telemetry, RadioLeft,\r\n"
+                           "; RadioRight, Map, or None. The left stick's left / right always steers.\r\n"
+                           "[Controller]\r\nCustom=0\r\n";
+        for (const PadButton& b : kPadButtons) text += std::string(b.column) + "=" + (*b.stock ? b.stock : "None") + "\r\n";
+        if (HANDLE f = CreateFileW(ini.c_str(), FILE_APPEND_DATA, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+            f != INVALID_HANDLE_VALUE) {
+            DWORD n = 0;
+            WriteFile(f, text.data(), static_cast<DWORD>(text.size()), &n, nullptr);
+            CloseHandle(f);
+        }
+    }
+    std::lock_guard<std::mutex> lock(g_pad_mx);
+    g_pad_custom = GetPrivateProfileIntW(L"Controller", L"Custom", 0, ini.c_str()) != 0;
+    for (int c = 0; c < kPadButtonCount; ++c) {
+        wchar_t buf[64] = {};
+        GetPrivateProfileStringW(L"Controller", widen(kPadButtons[c].column).c_str(), widen(kPadButtons[c].stock).c_str(), buf,
+                                 64, ini.c_str());
+        std::string text;
+        for (const wchar_t* ch = buf; *ch; ++ch) text += *ch < 128 ? static_cast<char>(*ch) : '?';
+        const char* name = pad_action_name(text);
+        if (!name) {
+            g_api->log(g_mod, ("unknown action in [Controller]: " + std::string(kPadButtons[c].column) + "=" + text).c_str());
+            name = "";
+        }
+        g_pad_action[c] = name;
+    }
+}
+
+std::string pad_row_key(int c) { return std::string("Pad_") + kPadButtons[c].column; }
+
+// A button row's value: its action's place in its choices, or -1.
+int pad_row_value(int c, const std::string& action) {
+    for (std::size_t i = 0; i < g_pad_choices[c].size(); ++i)
+        if (!_stricmp(g_pad_choices[c][i].c_str(), action.c_str())) return static_cast<int>(i);
+    return -1;
+}
+
+void set_pad_button(int c, const std::string& action) {   // g_pad_mx held
+    g_pad_action[c] = action;
+    WritePrivateProfileStringW(L"Controller", widen(kPadButtons[c].column).c_str(), action.empty() ? L"None" : widen(action).c_str(),
+                               g_ini.c_str());
+}
+
+// The button rows show what each button does now: the game's layout while it's the game's, the
+// custom one's buttons while that's on. (g_pad_mx held. `open`: on the UI thread, in a row's
+// on_change, so the open page shows them too; else from the next time it opens.)
+void show_pad_rows(const std::array<std::string, kPadButtonCount>& actions, bool open = true) {
+    if (!g_pad_rows) return;
+    for (int c = 0; c < kPadButtonCount; ++c) {
+        const int v = pad_row_value(c, actions[c]);
+        if (v < 0) continue;
+        g_api->set_setting(g_mod, pad_row_key(c).c_str(), v);
+        if (open) refresh_row(pad_row_key(c).c_str());
+    }
+}
+
+// Custom on. `from_game`: its buttons become the game's layout first (a button was changed on the
+// page, which showed the game's). Else they're the ini's, unless those are still layout 1's: then
+// they're the game's too, so turning it on changes nothing until a button is. (g_pad_mx held.)
+void pad_custom_on(bool from_game) {
+    g_pad_custom = true;
+    WritePrivateProfileStringW(L"Controller", L"Custom", L"1", g_ini.c_str());
+    g_api->set_setting(g_mod, "PadLayout", 1);
+    refresh_row("PadLayout");
+    bool stock = true;
+    for (int c = 0; c < kPadButtonCount; ++c) stock = stock && !_stricmp(g_pad_action[c].c_str(), kPadButtons[c].stock);
+    if ((from_game || stock) && g_game_layout_seen) {
+        for (int c = 0; c < kPadButtonCount; ++c)
+            if (const char* name = pad_action_name(g_game_layout[c]); name && _stricmp(name, g_pad_action[c].c_str()))
+                set_pad_button(c, name);
+        g_api->log(g_mod, "custom controller layout on, starting from the game's layout");
+    } else {
+        g_api->log(g_mod, "custom controller layout on");
+    }
+    show_pad_rows(g_pad_action);
+}
+
+void pad_row_changed(void*, const char* key, int value) {
+    std::lock_guard<std::mutex> lock(g_pad_mx);
+    if (!std::strcmp(key, "PadLayout")) {
+        if (value && !g_pad_custom) {
+            pad_custom_on(false);
+        } else if (!value && g_pad_custom) {
+            g_pad_custom = false;
+            WritePrivateProfileStringW(L"Controller", L"Custom", L"0", g_ini.c_str());
+            if (g_game_layout_seen) show_pad_rows(g_game_layout);
+            g_api->log(g_mod, "custom controller layout off");
+        }
+        g_pad_apply = true;
+        return;
+    }
+    for (int c = 0; c < kPadButtonCount; ++c) {
+        if (pad_row_key(c) != key) continue;
+        if (value < 0 || value >= static_cast<int>(g_pad_choices[c].size())) return;
+        if (!g_pad_custom) pad_custom_on(true);   // a button changed: the layout is the custom one now
+        set_pad_button(c, g_pad_choices[c][value]);
+        g_api->set_setting(g_mod, key, value);    // after show_pad_rows, which showed the game's
+        g_pad_apply = true;
+        return;
+    }
+}
+
+// The layout row, then a row for each button: its action, from the list above, or what the ini
+// has if that's another of the game's.
+void add_controller_rows(void (*add_row)(const FH2Setting&)) {
+    const std::wstring mods = std::wstring(g_api->azimuth_dir) + L"\\fh2-mods\\";
+    for (const wchar_t* other : {L"FH2Controls.dll", L"CustomBindings.dll"})
+        if (GetFileAttributesW((mods + other).c_str()) != INVALID_FILE_ATTRIBUTES) {
+            g_pad_conflict = true;
+            g_api->log(g_mod, "FH2Controls or CustomBindings is installed and sets the controller's layout: no controller rows");
+            return;
+        }
+    std::lock_guard<std::mutex> lock(g_pad_mx);
+    static const char* layouts[2];
+    layouts[0] = lang::tr("Game's");
+    layouts[1] = lang::tr("Custom");
+    FH2Setting layout{};
+    layout.size         = sizeof layout;
+    layout.key          = "PadLayout";
+    layout.label        = lang::tr("Controller layout");
+    layout.description  = lang::tr("Game's uses the layout picked in Settings > Controls. Custom uses the buttons below, starting from the layout you had. Changes apply at once.");
+    layout.kind         = FH2_SETTING_CHOICE;
+    layout.choices      = layouts;
+    layout.choice_count = 2;
+    layout.value        = g_pad_custom ? 1 : 0;
+    layout.on_change    = pad_row_changed;
+    add_row(layout);
+    static std::string keys[kPadButtonCount];
+    static std::vector<std::string> labels[kPadButtonCount];
+    for (int c : kPadRowOrder) {
+        auto& choices = g_pad_choices[c];
+        for (const PadAction& a : kPadActions) {
+            choices.push_back(a.name);
+            labels[c].push_back(lang::tr(a.label));
+        }
+        if (pad_row_value(c, g_pad_action[c]) < 0) {   // another of the game's names, from the ini
+            choices.push_back(g_pad_action[c]);
+            labels[c].push_back(g_pad_action[c]);
+        }
+        std::vector<const char*> names;
+        for (const std::string& l : labels[c]) names.push_back(l.c_str());
+        keys[c] = pad_row_key(c);
+        FH2Setting s{};
+        s.size         = sizeof s;
+        s.key          = keys[c].c_str();
+        s.label        = lang::tr(kPadButtons[c].label);
+        s.description  = lang::tr("The action on this button of the controller, with the custom layout. Changing it makes the layout Custom. Map opens the map while you drive.");
+        s.kind         = FH2_SETTING_CHOICE;
+        s.choices      = names.data();
+        s.choice_count = static_cast<uint32_t>(names.size());
+        s.value        = pad_row_value(c, g_pad_action[c]);
+        s.on_change    = pad_row_changed;
+        add_row(s);
+    }
+    g_pad_rows = true;
+}
+
 void add_keyboard_rows() {
     if (g_api->api_version < 9) return;
     auto add_row = [](const FH2Setting& s) {
@@ -623,6 +875,7 @@ void add_keyboard_rows() {
         s.on_change    = keyboard_row_changed;
         add_row(s);
     }
+    add_controller_rows(add_row);
 }
 
 void load_settings() {
@@ -674,6 +927,7 @@ void load_settings() {
     g_cfg.look_percent = std::max(0, std::min(100, static_cast<int>(GetPrivateProfileIntW(L"Mouse", L"FreeLookSensitivity", 50, ini.c_str()))));
     g_cfg.frame_rate  = std::min(1000, static_cast<int>(GetPrivateProfileIntW(L"Mouse", L"FrameRate", 0, ini.c_str())));
     load_keys(ini);
+    load_controller(ini);
 }
 
 void logf(const char* fmt, ...) {
@@ -1576,6 +1830,187 @@ std::atomic<DWORD> g_press_until{0};   // when the phase ends (0 while held: the
 std::atomic<bool> g_press_held{false};
 std::atomic<bool> g_press_told{false}, g_release_told{false};
 
+// ---- the custom controller layout ---------------------------------------------------------------
+// LoadLayout (0x2DC300: bindings, layout id, kind: 1 a pad, 2 a wheel...) reads a ControllerLayouts
+// row's columns one at a time: at 0x2DC495, rax is the column's text (an MSVC std::string) and r15
+// is at the column's entry in the column table (0x1E09C48, 16 bytes each, kPadButtons' order).
+// With the custom layout on, each column's text is pointed at the ini's action instead. The game's
+// own layouts aren't changed: turning it off, the game reads them as before. The columns of the
+// layout the game asked for are kept either way, for the page to show and for the custom layout to
+// start from (pad_custom_on).
+//
+// Map isn't an action the layouts can hold (the quick map, control 22, is asked for while you
+// drive at 0x964B85, and no layout binds it), so its button gets no action, and that's where the
+// game hears it: when it asks there, the button's state (0x106EEF0: 1 just pressed) says.
+//
+// A change on the page applies at once: the controls are applied again as Settings > Controls
+// does it (0xB622E1): for each of the local players (the object at [0x34ABA60]+0x1A8, players
+// from 0x2DDEE0 and 0x2DDF50), 0x2FD170 sets its controls from its profile, layout included.
+constexpr uintptr_t RVA_LOAD_LAYOUT    = 0x2DC300;
+constexpr uintptr_t RVA_COLUMN_READ    = 0x2DC495;
+constexpr uintptr_t RVA_COLUMN_TABLE   = 0x1E09C48;
+constexpr uintptr_t RVA_BUTTON_STATE   = 0x106EEF0;
+constexpr uintptr_t RVA_MAP_ASK        = 0x964B85;
+constexpr uintptr_t RVA_APPLY_CONTROLS = 0x2FD170;
+constexpr uintptr_t RVA_PLAYERS_OWNER  = 0x34ABA60;
+constexpr uintptr_t OWNER_PLAYERS      = 0x1A8;
+constexpr uintptr_t RVA_PLAYER_ONE     = 0x2DDEE0;
+constexpr uintptr_t RVA_PLAYER_TWO     = 0x2DDF50;
+constexpr int kMapControl              = 22;
+using LoadLayoutFn  = void* (*)(void* bindings, int id, uint8_t kind, void* options);
+using PadButtonStateFn = int (*)(void* input, int pad_input);
+using PlayerFn      = void* (*)(void* players);
+using ApplyFn       = void (*)(void* player);
+LoadLayoutFn o_load_layout = nullptr;
+bool g_pad_hooked          = false;   // the custom layout works
+bool g_map_button_ok       = false;   // ... and so can Map
+std::atomic<int> g_map_input{-1};     // the button with Map (the game's number), or -1
+
+// An MSVC std::string, for the column's text.
+struct MsvcString {
+    union {
+        char buf[16];
+        const char* ptr;
+    };
+    std::size_t size;
+    std::size_t capacity;
+};
+MsvcString g_column_text[kPadButtonCount];
+std::array<std::string, kPadButtonCount> g_column_store;   // the text, for the long ones
+std::array<std::string, kPadButtonCount> g_loading;        // the actions the custom layout loads
+thread_local int t_loading = 0;                            // 1: the game's layout, 2: the custom one
+thread_local bool t_keep   = false;                        // the row read is the game's layout: kept
+constexpr int kLayoutRows  = 13;                           // ControllerLayouts' rows
+
+void column_read(FH2Context* ctx, void*) {
+    if (!t_loading) return;
+    const uintptr_t lo = reinterpret_cast<uintptr_t>(g_base) + RVA_COLUMN_TABLE;
+    if (ctx->r15 < lo || ctx->r15 >= lo + 16 * kPadButtonCount || (ctx->r15 - lo) % 16) return;
+    const int c = static_cast<int>((ctx->r15 - lo) / 16);
+    if (t_keep)
+        if (const auto* s = reinterpret_cast<const MsvcString*>(ctx->rax); s && s->size <= 64) {
+            std::lock_guard<std::mutex> lock(g_pad_mx);
+            g_game_layout[c].assign(s->capacity < 16 ? s->buf : s->ptr, s->size);
+        }
+    if (t_loading == 1) return;
+    std::string action = g_loading[c];
+    if (!_stricmp(action.c_str(), "Map")) {
+        g_map_input = kPadButtons[c].input;
+        action.clear();
+    }
+    MsvcString& f  = g_column_text[c];
+    g_column_store[c] = action;
+    f.size         = action.size();
+    if (action.size() < 16) {
+        std::memset(f.buf, 0, sizeof f.buf);
+        std::memcpy(f.buf, action.data(), action.size());
+        f.capacity = 15;
+    } else {
+        f.ptr      = g_column_store[c].c_str();
+        f.capacity = action.size();
+    }
+    ctx->rax = reinterpret_cast<uint64_t>(&f);
+}
+
+void* load_layout(void* bindings, int id, uint8_t kind, void* options) {
+    if (kind != 1) return o_load_layout(bindings, id, kind, options);   // wheels keep the game's
+    bool custom;
+    {
+        std::lock_guard<std::mutex> lock(g_pad_mx);
+        custom = g_pad_custom;
+        if (custom) g_loading = g_pad_action;
+    }
+    // The game's row is read either way (its columns kept), or the first for an id that isn't one.
+    const bool real = id >= 0 && id < kLayoutRows;
+    g_map_input = -1;
+    t_loading   = custom ? 2 : 1;
+    t_keep      = real;
+    void* r     = o_load_layout(bindings, real || !custom ? id : 0, kind, options);
+    t_loading   = 0;
+    t_keep      = false;
+    if (real) {
+        std::lock_guard<std::mutex> lock(g_pad_mx);
+        g_game_layout_seen = true;
+        if (!g_pad_custom) show_pad_rows(g_game_layout, false);   // the page shows the layout in use
+    }
+    if (custom) logf("controller layout: the custom one ([Controller])%s", g_map_input.load() >= 0 ? ", with Map on a button" : "");
+    else logf("controller layout: the game's layout %d", id + 1);
+    return r;
+}
+
+// The quick map from the button with Map: where the game asks for it while you drive.
+bool pad_map_pressed(void* input, int context, int control, const void* from) {
+    const int in = g_map_input.load();
+    return in >= 0 && g_map_button_ok && control == kMapControl && context == kDriving && from == g_base + RVA_MAP_ASK &&
+           game<ContextActiveFn>(RVA_CONTEXT_ACTIVE)(input, kDriving) && game<PadButtonStateFn>(RVA_BUTTON_STATE)(input, in) == 1;
+}
+
+// The controls applied again, as Settings > Controls does: on the UI thread, a frame after a change.
+bool apply_controls_guarded() {
+    __try {
+        uint8_t* owner = at<uint8_t*>(g_base, RVA_PLAYERS_OWNER);
+        uint8_t* players = owner ? at<uint8_t*>(owner, OWNER_PLAYERS) : nullptr;
+        if (!players) return true;   // no one signed in yet: the layout loads when they are
+        using RefFn = void (*)(void*);
+        void** vt = at<void**>(players, 0);
+        reinterpret_cast<RefFn>(vt[2])(players);   // AddRef, as the game does around it
+        if (void* p = game<PlayerFn>(RVA_PLAYER_ONE)(players)) game<ApplyFn>(RVA_APPLY_CONTROLS)(p);
+        if (void* p = game<PlayerFn>(RVA_PLAYER_TWO)(players)) game<ApplyFn>(RVA_APPLY_CONTROLS)(p);
+        reinterpret_cast<RefFn>(vt[3])(players);   // Release
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+void pad_apply_frame() {
+    static bool broken = false;
+    if (!g_pad_apply.exchange(false) || !g_pad_hooked || broken) return;
+    if (!apply_controls_guarded()) {
+        broken = true;
+        logf("applying the controls again didn't work (exception): layout changes apply from the next start");
+    }
+}
+
+void hook_pad_layout() {
+    if (!g_pad_rows || g_api->api_version < 7) return;
+    // The function's first bytes may already be a hook's jump (the platform checks those against the exe).
+    static const uint8_t load_tail[] = {0x40, 0x18, 0x55, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57};
+    static const uint8_t column_bytes[] = {0x48, 0xC7, 0x45, 0xCF, 0x0F, 0x00, 0x00, 0x00, 0x48, 0xC7, 0x45, 0xC7, 0x00, 0x00, 0x00, 0x00};
+    static const uint8_t apply_bytes[]  = {0x48, 0x8B, 0xC4, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57};
+    static const uint8_t player_bytes[] = {0x40, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x48, 0xC7, 0x44, 0x24, 0x20, 0xFE};
+    if (std::memcmp(g_base + RVA_LOAD_LAYOUT + 5, load_tail, sizeof load_tail) ||
+        std::memcmp(g_base + RVA_COLUMN_READ, column_bytes, sizeof column_bytes) ||
+        std::memcmp(g_base + RVA_APPLY_CONTROLS, apply_bytes, sizeof apply_bytes) ||
+        std::memcmp(g_base + RVA_PLAYER_ONE, player_bytes, sizeof player_bytes) ||
+        std::memcmp(g_base + RVA_PLAYER_TWO, player_bytes, sizeof player_bytes)) {
+        logf("the game's controller layout code isn't as expected: the controller rows do nothing");
+        return;
+    }
+    FH2Hook* hooks[] = {
+        g_api->hook_function(g_mod, "LoadLayout (the custom controller layout)", g_base + RVA_LOAD_LAYOUT,
+                             reinterpret_cast<void*>(&load_layout), reinterpret_cast<void**>(&o_load_layout)),
+        g_api->hook_instruction(g_mod, "LoadLayout: a column's text (the custom controller layout)", g_base + RVA_COLUMN_READ,
+                                column_read, nullptr),
+    };
+    bool made = hooks[0] && hooks[1];
+    for (FH2Hook* h : hooks)
+        if (made && !g_api->enable_hooks(g_mod, h)) made = false;
+    if (!made) {
+        for (FH2Hook* h : hooks)
+            if (h) g_api->disable_hooks(g_mod, h);
+        logf("couldn't hook the controller's layout: the controller rows do nothing");
+        return;
+    }
+    g_pad_hooked = true;
+    static const uint8_t state_bytes[] = {0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x48, 0x63, 0xF2};
+    static const uint8_t ask_bytes[]   = {0x84, 0xC0, 0x74, 0x0F, 0x48, 0x8D, 0x97, 0x18, 0x01, 0x00, 0x00};
+    g_map_button_ok = o_was_pressed && !std::memcmp(g_base + RVA_BUTTON_STATE, state_bytes, sizeof state_bytes) &&
+                      !std::memcmp(g_base + RVA_MAP_ASK, ask_bytes, sizeof ask_bytes);
+    logf("custom controller layout ready (%s)%s", g_pad_custom ? "on" : "off",
+         g_map_button_ok ? "" : "; the map's code isn't as expected: Map on a button does nothing");
+}
+
 bool was_pressed(void* input, int context, int control, uint8_t a) {
     g_player = static_cast<uint8_t*>(input);
     if (o_was_pressed(input, context, control, a)) {
@@ -1589,6 +2024,7 @@ bool was_pressed(void* input, int context, int control, uint8_t a) {
         }
         return true;
     }
+    if (pad_map_pressed(input, context, control, RETURN_ADDRESS())) return true;
     if (key_pressed(input, context, control, RETURN_ADDRESS())) return true;
     if (context != 7) return false;
     // Like a real press: "pressed" to the first asker once, "released" once (later).
@@ -3656,6 +4092,7 @@ void detour_update(void* self, float dt) {
         cam_frame_begin();
         plugin_buttons();
     }
+    pad_apply_frame();
     o_update(self, dt);
 }
 
@@ -4469,6 +4906,7 @@ DWORD WINAPI start(LPVOID) {
         g_api->enable_hooks(g_mod, nullptr);
     else
         logf("photo mode's camera isn't as expected: no mouse there");
+    hook_pad_layout();
     hook_nitro();
     hook_horn();
     hook_key_icons();   // last: it enables what it hooked only when all of it is
