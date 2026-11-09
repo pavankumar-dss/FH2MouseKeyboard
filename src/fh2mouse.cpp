@@ -1227,6 +1227,11 @@ constexpr uintptr_t STATE_DPAD       = 0x10;   // the d-pad as a direction: {dir
 // And the pad's own XINPUT_STATE, as read (+0x4C: dwPacketNumber, +0x50: wButtons). Extra Options'
 // plugins (Weather Control's "Change time") read the buttons there, not the game's.
 constexpr uintptr_t STATE_XINPUT_BUTTONS = 0x50;
+// The buttons of the last frames they were held in (seen with a controller, not in the code): 10 entries of 8 bytes
+// (XInput's bits), then the next one's index and how many frames they've been held; all 0 once let go. Some screens
+// go by it (the race's start screen moves up and down by it).
+constexpr uintptr_t STATE_HISTORY = 0x60, STATE_HISTORY_INDEX = 0xB0, STATE_HISTORY_COUNT = 0xB4;
+constexpr int kHistory = 10;
 
 // The d-pad's direction, as the pad gives it with its bits (what the tile grids go by): 0 up, 2
 // left, 4 down, 6 right (counterclockwise, 8 none), the angle from up, the length, x and y.
@@ -1396,39 +1401,132 @@ uint64_t keys_pad_bits() {
     return bits;
 }
 
+// Each input the keys' buttons go into, with what they held there last frame and its history as they left it.
+struct FedInput {
+    uint8_t* input     = nullptr;
+    uint64_t last_bits = 0;
+    int history_count  = 0;
+    bool history_ours  = false;
+    DWORD seen         = 0;
+};
+FedInput g_fed[8];                     // the input update's thread only
+std::atomic<uint64_t> g_fed_bits{0};   // what the keys hold this frame (for was_pressed)
+
+FedInput& fed_for(uint8_t* in) {
+    FedInput* slot = &g_fed[0];
+    for (FedInput& f : g_fed) {
+        if (f.input == in) return f;
+        if (f.seen < slot->seen) slot = &f;
+    }
+    *slot       = FedInput{};
+    slot->input = in;
+    return *slot;
+}
+
+// The keys' buttons into the state's history, as a controller's go in: each frame they're held, the next entry and
+// one more frame; let go, it's cleared. If the controller wrote this frame's entry, the keys' join it.
+void history(uint8_t* state, uint16_t buttons, FedInput& f) {
+    auto* entries = reinterpret_cast<uint64_t*>(state + STATE_HISTORY);
+    int& index    = *reinterpret_cast<int*>(state + STATE_HISTORY_INDEX);
+    int& count    = *reinterpret_cast<int*>(state + STATE_HISTORY_COUNT);
+    if (index < 0 || index >= kHistory) return;   // not as expected: left alone
+    const bool game_wrote = count != f.history_count;
+    if (buttons) {
+        if (game_wrote && count > 0) entries[(index + kHistory - 1) % kHistory] |= buttons;
+        else entries[index] = buttons, index = (index + 1) % kHistory, ++count;
+        f.history_ours = true;
+    } else if (f.history_ours) {
+        f.history_ours = false;
+        if (!game_wrote) {   // the keys' alone: let go, as a controller's are
+            for (int i = 0; i < kHistory; ++i) entries[i] = 0;
+            index = count = 0;
+        }
+    }
+    f.history_count = count;
+}
+
+void feed(uint8_t* in, uint64_t bits) {
+    FedInput& f = fed_for(in);
+    f.seen      = GetTickCount();
+    // The keys are its pad now: when the pad goes, the car (0x2FD9E3) stops reading an input that isn't connected
+    // and the HUD pauses the game for it, so it stays connected.
+    in[INPUT_CONNECTED] = 1;
+    *reinterpret_cast<uint64_t*>(in + INPUT_BUTTONS) |= bits;
+    if (bits & 0xF) set_dpad(in + INPUT_STATE, bits);
+    // Last frame's state is the pad's alone, so what the keys held then goes in there too: else a held key is a new
+    // press every frame (a tap ran down a whole list).
+    *reinterpret_cast<uint64_t*>(in + INPUT_LAST_STATE + STATE_BUTTONS) |= f.last_bits;
+    if (f.last_bits & 0xF) set_dpad(in + INPUT_LAST_STATE, f.last_bits);
+    f.last_bits = bits;
+    // As a controller's: its raw XInput buttons too, and the history of the frames they've been held.
+    if (bits & 0xFFFF) *reinterpret_cast<uint16_t*>(in + INPUT_STATE + STATE_XINPUT_BUTTONS) |= static_cast<uint16_t>(bits);
+    history(in + INPUT_STATE, static_cast<uint16_t>(bits & 0xFFFF), f);
+}
+
 uintptr_t input_update(void* inputs, float dt) {
     const uintptr_t r = o_input_update(inputs, dt);
     ++g_input_frame;
-    uint8_t* in       = g_player.load();
+    uint8_t* in = g_player.load();
     if (!in) return r;
-    uint64_t& buttons = *reinterpret_cast<uint64_t*>(in + INPUT_BUTTONS);
     if (g_cfg.debug) {
-        static uint64_t last = 0;
+        static uint64_t last   = 0;
+        const uint64_t buttons = *reinterpret_cast<uint64_t*>(in + INPUT_BUTTONS);
         if (buttons != last) logf("pad buttons %llx", static_cast<unsigned long long>(buttons));
         last = buttons;
     }
-    static uint8_t* last_in   = nullptr;
-    static uint64_t last_bits = 0;   // what the keys held last frame
-    if (in != last_in) last_in = in, last_bits = 0;
     if (!g_keyboard) return r;
-    // The keys are its pad now: when the pad goes, the car (0x2FD9E3) stops reading an input
-    // that isn't connected and the HUD pauses the game for it, so it stays connected.
-    in[INPUT_CONNECTED] = 1;
     const uint64_t bits = keys_pad_bits();
-    buttons |= bits;
-    if (bits & 0xF) set_dpad(in + INPUT_STATE, bits);
-    // Last frame's state is the pad's alone, so what the keys held then goes in there too:
-    // else a held key is a new press every frame (a tap ran down a whole list).
-    *reinterpret_cast<uint64_t*>(in + INPUT_LAST_STATE + STATE_BUTTONS) |= last_bits;
-    if (last_bits & 0xF) set_dpad(in + INPUT_LAST_STATE, last_bits);
-    last_bits = bits;
+    g_fed_bits          = bits;
+    // Into the input that last asked and the current player's (both handed over by the game each frame). Not a
+    // kept pointer to the UI's input: the game swaps it (a restart, a replay), and the old one may be gone.
+    uint8_t* all = at<uint8_t*>(g_base, RVA_INPUTS);
+    uint8_t* cur = all ? at<uint8_t*>(all, INPUTS_CURRENT) : nullptr;
+    feed(in, bits);
+    if (cur && cur != in) feed(cur, bits);
     // Extra Options reads the buttons as read (see plugin_buttons) in the simulation too, after this.
-    if (const uint16_t extra = extra_pad_bits()) {
-        uint8_t* inputs = at<uint8_t*>(g_base, RVA_INPUTS);
-        if (uint8_t* cur = inputs ? at<uint8_t*>(inputs, INPUTS_CURRENT) : nullptr)
-            *reinterpret_cast<uint16_t*>(cur + INPUT_STATE + STATE_XINPUT_BUTTONS) |= extra;
-    }
+    if (const uint16_t extra = extra_pad_bits())
+        if (cur) *reinterpret_cast<uint16_t*>(cur + INPUT_STATE + STATE_XINPUT_BUTTONS) |= extra;
     return r;
+}
+
+// A screen's own d-pad checks (menu controls 121 up, 123 down, 125 / 127 left / right: the race's start screen moves
+// by them). The game decides "pressed" per button, and the first control that takes a press consumes it for the
+// others: with a pad, the screen's checks come first; with the keys, the menus' key pump's (92...) does, and the
+// screen never sees the press. So for a d-pad press of the keys', each is told "pressed" once if the game didn't say
+// so itself, from when the direction is to be seen in the input asked (FH2 ANNA keeps a d-pad-down tap from the
+// game a while, as its open button).
+constexpr int kDpadControls[4]  = {121, 123, 125, 127};
+constexpr uint64_t kDpadBits[4] = {1, 2, 4, 8};
+DWORD g_dpad_at[4]              = {};
+bool g_dpad_told[4]             = {};
+bool g_dpad_visible[4]          = {};
+
+int dpad_index(int control) {
+    for (int i = 0; i < 4; ++i)
+        if (kDpadControls[i] == control) return i;
+    return -1;
+}
+
+bool dpad_visible(void* input, int i) {
+    return input && (*reinterpret_cast<uint64_t*>(static_cast<uint8_t*>(input) + INPUT_BUTTONS) & kDpadBits[i]);
+}
+
+void dpad_told(void* input, int control) {
+    const int i = dpad_index(control);
+    if (i < 0) return;
+    g_dpad_told[i] = true, g_dpad_at[i] = GetTickCount(), g_dpad_visible[i] = dpad_visible(input, i);
+}
+
+bool dpad_pressed(void* input, int control) {
+    const int i = dpad_index(control);
+    if (i < 0) return false;
+    const bool keys    = (g_fed_bits.load() & kDpadBits[i]) != 0;
+    const bool visible = dpad_visible(input, i);
+    if (keys && visible && !g_dpad_visible[i]) g_dpad_at[i] = GetTickCount(), g_dpad_told[i] = false;
+    g_dpad_visible[i] = visible;
+    if (!keys || !visible || g_dpad_told[i] || GetTickCount() - g_dpad_at[i] > 250) return false;
+    g_dpad_told[i] = true;
+    return true;
 }
 
 // Extra Options' plugins (Weather Control's "(Y) Change time") read the pad's buttons as read, in
@@ -1579,6 +1677,7 @@ std::atomic<bool> g_press_told{false}, g_release_told{false};
 bool was_pressed(void* input, int context, int control, uint8_t a) {
     g_player = static_cast<uint8_t*>(input);
     if (o_was_pressed(input, context, control, a)) {
+        if (context == 7) dpad_told(input, control);
         if (g_cfg.debug) {
             static int last_ctx = -1, last_ctl = -1;
             static DWORD last_t = 0;
@@ -1591,6 +1690,7 @@ bool was_pressed(void* input, int context, int control, uint8_t a) {
     }
     if (key_pressed(input, context, control, RETURN_ADDRESS())) return true;
     if (context != 7) return false;
+    if (g_keyboard && dpad_pressed(input, control)) return true;
     // Like a real press: "pressed" to the first asker once, "released" once (later).
     const int phase = g_press_phase.load();
     bool r = false;
@@ -2974,9 +3074,20 @@ const char* focus_name() {
 
 // A menu page has the focus (not the driving HUD's window). The telemetry takes the focus too,
 // but it's shown while driving: the driving keys drive, and close it and turn its pages.
+// The game is taking driving input: its driving controls (context 0) are on for the current player. Not on a race's
+// results, which are drawn in the driving HUD's window, so its focus alone doesn't tell.
+bool driving_controls_on() {
+    if (!o_get_digital) return true;   // can't tell: the focus decides, as before
+    uint8_t* all = at<uint8_t*>(g_base, RVA_INPUTS);
+    uint8_t* cur = all ? at<uint8_t*>(all, INPUTS_CURRENT) : nullptr;
+    return !cur || game<ContextActiveFn>(RVA_CONTEXT_ACTIVE)(cur, kDriving);
+}
+
 bool in_menu() {
     const char* n = focus_name();
-    return *n && std::strcmp(n, ".?AVUIWindow@@") != 0 && std::strcmp(n, ".?AVTelemetry@@") != 0;
+    if (!*n || !std::strcmp(n, ".?AVTelemetry@@")) return false;
+    if (std::strcmp(n, ".?AVUIWindow@@") != 0) return true;
+    return !driving_controls_on();   // the HUD's window, but nothing to drive: a race's results
 }
 
 // Screens with nothing to point at, where any click is A: the title screen, videos, the wheelspin.
