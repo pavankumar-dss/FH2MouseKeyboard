@@ -34,6 +34,7 @@
 #include <cwchar>
 #include <mutex>
 #include <string>
+#include <map>
 #include <vector>
 
 namespace {
@@ -239,6 +240,19 @@ const Action kActions[] = {
     {"AnnaDown", "ANNA: down", "K", -1, 0, 0, false},
     {"AnnaBack", "ANNA: back", "J", -1, 0, 0, false},
     {"AnnaChoose", "ANNA: choose", "L", -1, 0, 0, false},
+    // ANNA Drone Mode's keys: only while the drone flies, when they're all that counts (with the
+    // radio's keys), see "Drone Mode".
+    {"DroneForward", "Drone: forward", "W", -1, 0, 0, false},
+    {"DroneBack", "Drone: back", "S", -1, 0, 0, false},
+    {"DroneLeft", "Drone: left", "A", -1, 0, 0, false},
+    {"DroneRight", "Drone: right", "D", -1, 0, 0, false},
+    {"DroneUp", "Drone: up", "E", -1, 0, 0, false},
+    {"DroneDown", "Drone: down", "Q", -1, 0, 0, false},
+    {"DroneFast", "Drone: faster", "LShift", -1, 0, 0, false},
+    {"DroneToCar", "Drone: back to the car", "R", -1, 0, 0, false},
+    {"DroneLookAtCar", "Drone: look at the car", "F", -1, 0, 0, false},
+    {"DroneHelp", "Drone: hide / show the help", "Tab", -1, 0, 0, false},
+    {"DroneExit", "Drone: exit", "Escape", -1, 0, 0, false},
     // The menu's keys hold the pad's buttons too (Start, A, B, the d-pad), so every menu takes them
     // as it takes the pad's; the key is what's pressed instead if that can't be done.
     {"Pause", "Pause", "Escape", -1, 0, KEY_PAUSE, false, 0x10ull},
@@ -275,6 +289,63 @@ struct FH2AnnaApi {
 };
 const FH2AnnaApi* g_anna = nullptr;
 bool is_anna_action(const char* name) { return !std::strncmp(name, "Anna", 4); }
+// ANNA Drone Mode's interface (its include/dronemode.h): while the drone flies, it asks for the
+// keys' and the mouse's input each frame (see "Drone Mode").
+struct DroneModeInput {
+    uint32_t size;
+    float forward, right, up;   // -1..1
+    float yaw, pitch;           // radians now, + right / up
+    float zoom;                 // the zoom times exp(zoom)
+    int fast;
+    uint32_t pressed;           // kDrone*
+};
+struct DroneModePicture {
+    int kind;   // kDronePicture*
+    int width, height;
+    const uint32_t* pixels;   // premultiplied BGRA
+};
+struct DroneModeHelpKeys {
+    uint32_t size;
+    uint32_t (*shown)(void);   // 0: the pad's buttons; else changes with the pictures
+    int (*pictures)(int item, DroneModePicture* out, int max);
+};
+struct DroneModeApi {
+    uint32_t size;
+    int (*is_flying)(void);
+    void (*set_input)(void (*fn)(DroneModeInput* in, float dt));
+    void (*set_help_keys)(const DroneModeHelpKeys* keys);
+};
+// Its button help's entries (DRONEMODE_HELP_*), and the pictures it draws (DRONEMODE_PICTURE_*).
+enum { kDroneHelpMove, kDroneHelpLook, kDroneHelpDownUp, kDroneHelpFaster, kDroneHelpZoom, kDroneHelpRadio, kDroneHelpToCar,
+       kDroneHelpLookAtCar, kDroneHelpHide, kDroneHelpExit };
+enum { kDronePictureKey, kDronePictureMouse, kDronePictureWheel, kDronePictureLeft, kDronePictureRight };
+std::atomic<uint32_t> g_keys_version{1};   // changes with any action's keys (for the drone's button help)
+constexpr uint32_t kDroneExit = 0x01, kDroneToCar = 0x02, kDroneLookAtCar = 0x04, kDroneHelp = 0x08, kDroneRadioPrev = 0x10,
+                   kDroneRadioNext = 0x20;
+const DroneModeApi* g_drone = nullptr;
+bool is_drone_action(const char* name) { return !std::strncmp(name, "Drone", 5); }
+bool drone_flying() { return g_drone && g_drone->is_flying(); }
+std::atomic<uint32_t> g_drone_pressed{0};                 // kDrone* pressed, for its next frame
+std::atomic<float> g_drone_look_x{0}, g_drone_look_y{0};   // the mouse's move, in pixels
+std::atomic<float> g_drone_zoom{0};                        // the wheel's
+// What a key's press does to the drone (kDrone*), or 0.
+uint32_t drone_press(const char* action) {
+    static const struct { const char* name; uint32_t bit; } presses[] = {
+        {"DroneExit", kDroneExit}, {"DroneToCar", kDroneToCar}, {"DroneLookAtCar", kDroneLookAtCar}, {"DroneHelp", kDroneHelp},
+        {"RadioPrevious", kDroneRadioPrev}, {"RadioNext", kDroneRadioNext},
+    };
+    for (const auto& p : presses)
+        if (!std::strcmp(action, p.name)) return p.bit;
+    return 0;
+}
+
+float take(std::atomic<float>& a) { return a.exchange(0.f); }
+
+void add(std::atomic<float>& a, float v) {
+    float cur = a.load();
+    while (!a.compare_exchange_weak(cur, cur + v)) {
+    }
+}
 bool g_extra_options       = false;  // Extra Options' ini is there (see "Extra Options' keys")
 bool g_kbm_rows            = false;  // the rows are on the Mods page (API 9), for Settings > Keyboard & Mouse
 std::atomic<bool> g_icons_stale{false};   // the help bar on screen is to be shown again
@@ -323,6 +394,7 @@ void set_action_keys(int i, const std::string& text) {
         else g_api->log(g_mod, ("unknown key in [Keyboard]: " + t).c_str());
     }
     g_action_keys[i] = keys;
+    ++g_keys_version;
     g_action_text[i] = n ? text : "None";
 }
 
@@ -418,7 +490,8 @@ const Preset kPresets[] = {
       {"Clutch", "LShift"}, {"Horn", "H"}}},
     {"AZERTY",
      {{"Gas", "Z"}, {"Brake", "S"}, {"SteerLeft", "Q"}, {"SteerRight", "D"}, {"ShiftUp", "E"}, {"ShiftDown", "A"},
-      {"Clutch", "LShift"}, {"Horn", "H"}, {"ButtonLT", "W"}}},
+      {"Clutch", "LShift"}, {"Horn", "H"}, {"ButtonLT", "W"}, {"DroneForward", "Z"}, {"DroneLeft", "Q"},
+      {"DroneDown", "A"}}},
     {"QWERTZ",
      {{"Gas", "W"}, {"Brake", "S"}, {"SteerLeft", "A"}, {"SteerRight", "D"}, {"ShiftUp", "E"}, {"ShiftDown", "Q"},
       {"Clutch", "LShift"}, {"Horn", "H"}, {"ButtonLT", "Y"}, {"ButtonY", "Z"}}},
@@ -586,12 +659,15 @@ void add_keyboard_rows() {
                       INVALID_FILE_ATTRIBUTES;
     const bool anna = GetFileAttributesW((std::wstring(g_api->azimuth_dir) + L"\\fh2-mods\\FH2ANNA.dll").c_str()) !=
                       INVALID_FILE_ATTRIBUTES;
+    const bool drone = anna && GetFileAttributesW((std::wstring(g_api->azimuth_dir) + L"\\fh2-mods\\ANNADroneMode.dll").c_str()) !=
+                                   INVALID_FILE_ATTRIBUTES;
     for (int i = 0; i < kActionCount; ++i) {
         const Action& a = kActions[i];
         if (!std::strcmp(a.name, "Nitro") && !nitro) continue;
         if (!std::strcmp(a.name, "Horn") && !horn) continue;
         if (a.extra && !g_extra_options) continue;
         if (is_anna_action(a.name) && !anna) continue;
+        if (is_drone_action(a.name) && !drone) continue;
         auto& choices = g_row_choices[i];
         auto offer    = [&](const std::string& c) {
             if (choices.size() < kMaxChoices &&
@@ -611,7 +687,9 @@ void add_keyboard_rows() {
         s.size         = sizeof s;
         s.key          = keys[i].c_str();
         s.label        = labels[i].c_str();
-        s.description  = lang::tr(is_anna_action(a.name)
+        s.description  = lang::tr(is_drone_action(a.name)
+                             ? "ANNA Drone Mode's key while flying the drone. While it flies only its keys (and the radio's) count, so it can be a driving or menu key too."
+                         : is_anna_action(a.name)
                              ? "FH2 ANNA's key while driving, pressing the controller's d-pad for it. The open key is ANNA's whenever you drive, the others only while ANNA's menu is open: a driving key on the same key waits till then."
                          : a.menu  ? "The key for this in the menus. It does nothing while driving, so it can be a driving key too."
                          : a.extra ? "The key for this while driving: Extra Options' own, pressed on the controller button its ini gives it. It does nothing in the menus, so it can be a menu key too."
@@ -1564,6 +1642,8 @@ float with_keys(float v, void* input, int context, int control) {
 // the mouse is held in the middle of the window, hidden, and moving it sideways turns the camera
 // as far as it's moved, all the way round (straight back after pi / kLookPerPixel pixels). A moment after the mouse
 // stops, the camera turns back ahead, as when the stick is let go.
+// While ANNA Drone Mode's drone flies, the mouse is held in the middle the same way, and its moves
+// (up and down too) turn the drone (see "Drone Mode"), whatever FreeLook says, as in photo mode.
 constexpr float kPi = 3.14159265f, kLookPerPixel = 0.006f;
 constexpr DWORD kLookHoldMs = 1000;   // how long a look stays before it turns back
 std::atomic<float> g_look_yaw{0};     // radians, + to the right
@@ -1588,9 +1668,11 @@ float look_value(void* input, int context, int control) {
 // Once a UI frame.
 void look_frame() {
     static DWORD moved = 0;
-    HWND h         = g_hwnd.load();
-    const bool on  = g_cfg.free_look && h && GetForegroundWindow() == h && o_get_digital && !g_in_menu.load() &&
-                     GetTickCount() - g_look_asked.load() < 250;
+    HWND h           = g_hwnd.load();
+    const bool front = h && GetForegroundWindow() == h;
+    const bool drone = front && drone_flying();
+    const bool on    = drone || (g_cfg.free_look && front && o_get_digital && !g_in_menu.load() &&
+                                 GetTickCount() - g_look_asked.load() < 250);
     RECT r{};
     POINT mid{}, p{};
     if (on) GetClientRect(h, &r), mid = {r.right / 2, r.bottom / 2};
@@ -1602,6 +1684,14 @@ void look_frame() {
     if (!g_looking.load()) {   // from where the cursor was: nothing to turn by yet
         g_looking = true, moved = 0;
         SetCursorPos(mid.x, mid.y);
+        return;
+    }
+    if (drone) {   // the drone's, as far as it moved
+        g_look_yaw = 0;
+        if (p.x != mid.x || p.y != mid.y) {
+            add(g_drone_look_x, static_cast<float>(p.x - mid.x)), add(g_drone_look_y, static_cast<float>(p.y - mid.y));
+            SetCursorPos(mid.x, mid.y);
+        }
         return;
     }
     float yaw = g_look_yaw.load();
@@ -2052,6 +2142,14 @@ std::vector<uint8_t> shrink(const std::vector<uint8_t>& src, int sw, int sh, int
     return out;
 }
 
+// Every key's picture (premultiplied BGRA, kKeySize high), by texture (Key_0D): for ANNA Drone
+// Mode's button help. Written before any thread starts, then only read.
+struct KeyPicture {
+    int width = 0;
+    std::vector<uint32_t> pixels;
+};
+std::map<std::string, KeyPicture> g_key_pictures;
+
 // The wide keys, by texture (Key_0D), and how many times as wide as high they are. For each,
 // <name>_Sq is the same picture in a square, for where the game has a square for it.
 std::vector<std::pair<std::string, float>> g_wide_keys;
@@ -2102,6 +2200,8 @@ void write_key(const std::string& name, const std::string& key, const uint8_t* g
         return g_api->set_file(g_mod, (dir + file + ".swatchbin").c_str(), a.data(), a.size()) &&
                g_api->set_file(g_mod, (dir + file + "_Large.swatchbin").c_str(), b.data(), b.size());
     };
+    g_key_pictures[name] = {w, std::vector<uint32_t>(reinterpret_cast<const uint32_t*>(big.data()),
+                                                     reinterpret_cast<const uint32_t*>(big.data()) + big.size() / 4)};
     if (!put(name, big, w)) return;
     if (w > kKeySize) {
         // The square one: the key as wide as the square, in its middle.
@@ -2558,7 +2658,8 @@ bool keys_used() {
 
 // Once a UI frame: which of the two was used last, and the help bar shown again when it changes.
 void icons_frame() {
-    if (!g_icons_hooked) return;
+    // which was used last: for the game's help bar, and Drone Mode's (which doesn't need our hooks)
+    if (!g_icons_hooked && !g_drone) return;
     static bool started = false;
     const bool pad = pad_used(), keys = keys_used();
     if (!started) {
@@ -2568,6 +2669,7 @@ void icons_frame() {
     }
     if (keys && !g_keys_last.load()) g_keys_last = true, g_icons_stale = true;
     else if (pad && !keys && g_keys_last.load()) g_keys_last = false, g_icons_stale = true;
+    if (!g_icons_hooked) return;
     const bool stale = g_icons_stale.exchange(false);
     anna_icons_frame(stale);
     if (!stale) return;
@@ -3084,6 +3186,7 @@ bool driving_controls_on() {
 }
 
 bool in_menu() {
+    if (drone_flying()) return false;   // the drone has the driving input, as a menu would, but it's no menu
     const char* n = focus_name();
     if (!*n || !std::strcmp(n, ".?AVTelemetry@@")) return false;
     if (std::strcmp(n, ".?AVUIWindow@@") != 0) return true;
@@ -3116,14 +3219,6 @@ PhotoInputFn o_photo_input = nullptr;
 // Mouse movement for the camera, in UI pixels, gathered on the UI thread and used up by the camera.
 std::atomic<float> g_photo_look_x{0}, g_photo_look_y{0}, g_photo_move_x{0}, g_photo_move_y{0};
 std::atomic<float> g_photo_zoom{0};   // seconds left to zoom in (+) or out (-), from the wheel
-
-float take(std::atomic<float>& a) { return a.exchange(0.f); }
-
-void add(std::atomic<float>& a, float v) {
-    float cur = a.load();
-    while (!a.compare_exchange_weak(cur, cur + v)) {
-    }
-}
 
 std::atomic<bool> g_photo_keys{false};   // photo mode is up and the game window is in front
 
@@ -3409,6 +3504,17 @@ void on_event(const Event& e) {
         logf("event %d (%d), cursor %s, focus %s, menu %d", static_cast<int>(e.type), e.a, cursor_wanted() ? "shown" : "hidden",
              f ? rtti_name(f) : "none", menu_active() ? 1 : 0);
     }
+    // The drone flying (see "Drone Mode"): left click looks at the car, right click's the way
+    // out, the wheel zooms, and nothing else is clicked (a release still lets go of what it held).
+    if (drone_flying()) switch (e.type) {
+        case Ev::LDown: g_drone_pressed |= kDroneLookAtCar; return;
+        case Ev::RDown: g_drone_pressed |= kDroneExit; return;
+        case Ev::Wheel: add(g_drone_zoom, 0.15f * e.a / WHEEL_DELTA); return;
+        case Ev::X1Down:
+        case Ev::X2Down:
+        case Ev::MDown: return;
+        default: break;
+        }
     switch (e.type) {
     case Ev::Move: break;   // handled once per frame
     case Ev::LDown:
@@ -3681,6 +3787,7 @@ void keyboard_frame() {
     const bool front = h && GetForegroundWindow() == h;
     static float repeat[kActionCount] = {};   // seconds to the next repeat
     static bool down[kActionCount]    = {};   // its key is down, wherever we are
+    const bool flying                 = drone_flying();
     for (int i = 0; i < kActionCount; ++i) {
         const Action& a = kActions[i];
         bool now        = false;
@@ -3697,6 +3804,12 @@ void keyboard_frame() {
         const bool here    = a.menu == menu;
         static bool armed[kActionCount] = {};
         static DWORD until[kActionCount] = {};   // held at least till then (min_ms)
+        if (flying || is_drone_action(a.name)) {   // the drone's keys: only while it flies, and nothing else then
+            armed[i] = false, until[i] = 0;
+            g_held[i] = flying && now && is_drone_action(a.name);
+            if (flying && pressed) g_drone_pressed |= drone_press(a.name);
+            continue;
+        }
         armed[i] = now && here && (armed[i] || pressed);
         if (pressed && here && a.min_ms) until[i] = GetTickCount() + a.min_ms;
         if (until[i] && static_cast<LONG>(until[i] - GetTickCount()) <= 0) until[i] = 0;
@@ -3787,6 +3900,80 @@ bool code_matches() {
         return false;
     }
     return true;
+}
+
+// ---- Drone Mode ---------------------------------------------------------------------------------
+// ANNA Drone Mode (fh2-mods\ANNADroneMode.dll, FH2 ANNA's menu > Drone Mode) flies the camera on
+// the pad, which it reads itself. Its interface asks us for more input once a frame while it
+// flies: the Drone keys (and the radio's), and the mouse (see "free look": moving it turns, the
+// wheel zooms, left click looks at the car, right click's the way out). While it flies, the
+// driving and menu keys do nothing (keyboard_frame), and the game's no menu (in_menu).
+
+// The drone's camera thread, once a frame while it flies.
+void drone_input(DroneModeInput* in, float) {
+    if (!in || in->size < sizeof(DroneModeInput)) return;
+    static const int fwd = action_index("DroneForward"), back = action_index("DroneBack"), left = action_index("DroneLeft"),
+                     right = action_index("DroneRight"), up = action_index("DroneUp"), down = action_index("DroneDown"),
+                     fast = action_index("DroneFast");
+    auto held = [](int i) { return i >= 0 && g_held[i].load() ? 1.f : 0.f; };
+    in->forward       = held(fwd) - held(back);
+    in->right         = held(right) - held(left);
+    in->up            = held(up) - held(down);
+    in->fast          = held(fast) != 0;
+    const float per   = kLookPerPixel * g_cfg.look_percent.load() / 50.f;
+    in->yaw           = take(g_drone_look_x) * per;
+    in->pitch         = -take(g_drone_look_y) * per;   // the mouse up looks up
+    in->zoom          = take(g_drone_zoom);
+    in->pressed       = g_drone_pressed.exchange(0);
+}
+
+// Its button help: the keys' pictures while the keyboard or mouse was used last (its thread).
+uint32_t drone_keys_shown() {
+    if (!g_keyboard || !g_key_icons_on || !g_keys_last.load()) return 0;
+    return g_keys_version.load() | 1;   // never 0
+}
+
+int drone_pictures(int item, DroneModePicture* out, int max) {
+    int n = 0;
+    auto key = [&](const char* action) {
+        const int vk = first_key(action);
+        if (!vk || n >= max) return;
+        const auto it = g_key_pictures.find(key_file(vk));
+        if (it == g_key_pictures.end() || !it->second.width) return;
+        out[n++] = {kDronePictureKey, it->second.width, kKeySize, it->second.pixels.data()};
+    };
+    auto mouse = [&](int kind) {
+        if (n < max) out[n++] = {kind, 0, 0, nullptr};
+    };
+    switch (item) {
+    case kDroneHelpMove: key("DroneForward"), key("DroneLeft"), key("DroneBack"), key("DroneRight"); break;
+    case kDroneHelpLook: mouse(kDronePictureMouse); break;
+    case kDroneHelpDownUp: key("DroneDown"), key("DroneUp"); break;
+    case kDroneHelpFaster: key("DroneFast"); break;
+    case kDroneHelpZoom: mouse(kDronePictureWheel); break;
+    case kDroneHelpRadio: key("RadioPrevious"), key("RadioNext"); break;
+    case kDroneHelpToCar: key("DroneToCar"); break;
+    case kDroneHelpLookAtCar: key("DroneLookAtCar"), mouse(kDronePictureLeft); break;
+    case kDroneHelpHide: key("DroneHelp"); break;
+    case kDroneHelpExit: key("DroneExit"), mouse(kDronePictureRight); break;
+    default: break;
+    }
+    return n;
+}
+
+const DroneModeHelpKeys kDroneHelpKeys = {sizeof(DroneModeHelpKeys), drone_keys_shown, drone_pictures};
+
+// Once every mod has started: the drone's interface, if it's there.
+void hook_drone() {
+    g_drone = static_cast<const DroneModeApi*>(g_api->get_interface("ANNADroneMode", 1));
+    if (!g_drone) return;
+    if (g_drone->size < sizeof(DroneModeApi)) {
+        g_drone = nullptr;
+        return;
+    }
+    g_drone->set_input(drone_input);
+    if (!g_key_pictures.empty()) g_drone->set_help_keys(&kDroneHelpKeys);
+    logf("ANNA Drone Mode is here: the Drone keys and the mouse fly it");
 }
 
 // ---- FnFNitro ----------------------------------------------------------------------------------
@@ -4585,8 +4772,10 @@ DWORD WINAPI start(LPVOID) {
     hook_key_icons();   // last: it enables what it hooked only when all of it is
     hook_settings_tile();   // after every enable_hooks(g_mod, nullptr): it enables its own only if all of them are made
     // FH2 ANNA (its interface, once every mod has started): the keys it takes, the keys don't do.
-    if (g_api->api_version >= 2 && g_api->wait_for_mods(60000))
+    if (g_api->api_version >= 2 && g_api->wait_for_mods(60000)) {
         if ((g_anna = static_cast<const FH2AnnaApi*>(g_api->get_interface("FH2ANNA", 1)))) logf("FH2 ANNA is here: the ANNA keys work it");
+        hook_drone();
+    }
     g_arrow = LoadCursorW(nullptr, IDC_ARROW);
     if (HANDLE t = CreateThread(nullptr, 0, window_thread, nullptr, 0, nullptr)) CloseHandle(t);
     if (HANDLE t = CreateThread(nullptr, 0, hook_thread, nullptr, 0, nullptr)) CloseHandle(t);

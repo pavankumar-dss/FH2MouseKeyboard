@@ -33,6 +33,8 @@ On screens with nothing to point at (the title screen, videos, the wheelspin), a
 
 **Photo mode:** left drag to turn the camera, **W A S D** to move it, **Q / E** down / up, wheel to zoom, right click to exit.
 
+**[ANNA Drone Mode](https://github.com/qiangqiang101/ANNA-DroneMode)'s drone:** move the mouse to look around, **W A S D** to fly, **Q / E** down / up, hold **Left Shift** to go faster, wheel to zoom, **R** back to the car, **F** or left click to keep looking at the car, **Tab** hides the help, **, / .** change the radio station, **Esc** or right click to leave. While the drone flies only these keys count, so the driving and menu keys on the same keys wait till it lands. The keys are on the Keyboard & Mouse page ("Drone: forward"...) when Drone Mode is installed. While you play with the keyboard, the drone's button help shows these keys (and the mouse) instead of the controller's buttons, as the game's help bar does. It needs Drone Mode 1.1.0 or later.
+
 The cursor hides by itself a few seconds after you stop moving the mouse, and comes back when you move it.
 
 **Keyboard**
