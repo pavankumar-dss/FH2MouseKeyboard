@@ -586,7 +586,7 @@ void keyboard_row_changed(void*, const char* key, int value) {
     }
 }
 
-// ---- the controller's layout ([Controller], on the Keyboard & Mouse page) -----------------------
+// ---- the controller's layout ([Controller], on the game's Settings > Controls page) ---------------
 // A real controller's buttons come from the layout picked in Settings > Controls: a row of the
 // game's ControllerLayouts table, with a column for each button holding the name of the action on
 // it ("Gas", "ShiftUp", "" for none). With the custom layout on, the game reads the ini's buttons
@@ -595,7 +595,7 @@ void keyboard_row_changed(void*, const char* key, int value) {
 // on X with an automatic gearbox and View with a manual one, whatever the layout.
 struct PadButton {
     const char* column;   // ControllerLayouts' column, and the ini's name
-    const char* label;    // on the Keyboard & Mouse page
+    const char* label;    // its row's, on Settings > Controls
     int input;            // the game's number for it (what its button state takes)
     const char* stock;    // layout 1's action (ControllerLayouts' first row)
 };
@@ -660,10 +660,11 @@ bool g_pad_custom = false;                                 // [Controller] Custo
 std::array<std::string, kPadButtonCount> g_pad_action;     // the game's names, "" none
 std::array<std::string, kPadButtonCount> g_game_layout;    // the layout the game loaded last (its own)
 bool g_game_layout_seen = false;
-bool g_pad_rows         = false;                           // the rows are on the page
+bool g_pad_rows         = false;                           // the rows are set up (shown once the page has them)
 bool g_pad_conflict     = false;                           // FH2Controls or CustomBindings sets the layout
 std::atomic<bool> g_pad_apply{false};                      // apply the controls again, next UI frame
 std::array<std::vector<std::string>, kPadButtonCount> g_pad_choices;   // each row's names
+std::array<std::vector<std::string>, kPadButtonCount> g_pad_labels;    // ... and what the row shows for them
 
 // The game's name for an action from the ini's text ("None" and "" are none), or null.
 const char* pad_action_name(const std::string& text) {
@@ -678,7 +679,7 @@ const char* pad_action_name(const std::string& text) {
 void load_controller(const std::wstring& ini) {
     wchar_t probe[4];
     if (!GetPrivateProfileSectionW(L"Controller", probe, 4, ini.c_str())) {
-        std::string text = "\r\n; The controller's layout (also on Pause > Settings > Keyboard & Mouse). Custom=0 uses the\r\n"
+        std::string text = "\r\n; The controller's layout (also on Pause > Settings > Controls). Custom=0 uses the\r\n"
                            "; layout picked in Settings > Controls; Custom=1 uses the buttons below instead. Each button\r\n"
                            "; gets one action: Gas, Brake, Handbrake, ShiftUp, ShiftDown, Clutch, SwitchCamera,\r\n"
                            "; LookForward, LookBack, LookLeft, LookRight, Rewind, PhotoMode, Telemetry, RadioLeft,\r\n"
@@ -724,18 +725,14 @@ void set_pad_button(int c, const std::string& action) {   // g_pad_mx held
                                g_ini.c_str());
 }
 
-// The button rows show what each button does now: the game's layout while it's the game's, the
-// custom one's buttons while that's on. (g_pad_mx held. `open`: on the UI thread, in a row's
-// on_change, so the open page shows them too; else from the next time it opens.)
-void show_pad_rows(const std::array<std::string, kPadButtonCount>& actions, bool open = true) {
-    if (!g_pad_rows) return;
-    for (int c = 0; c < kPadButtonCount; ++c) {
-        const int v = pad_row_value(c, actions[c]);
-        if (v < 0) continue;
-        g_api->set_setting(g_mod, pad_row_key(c).c_str(), v);
-        if (open) refresh_row(pad_row_key(c).c_str());
-    }
+// What the button rows show: the game's layout while it's the game's, the custom one's buttons while
+// that's on. (g_pad_mx held.)
+const std::array<std::string, kPadButtonCount>& pad_shown() {
+    return g_pad_custom || !g_game_layout_seen ? g_pad_action : g_game_layout;
 }
+
+// What the rows showed when a change came from the page (its Layout row's pick), for pad_custom_on.
+const std::array<std::string, kPadButtonCount>* g_pad_from = nullptr;   // g_pad_mx held
 
 // Custom on. `from_game`: its buttons become the game's layout first (a button was changed on the
 // page, which showed the game's). Else they're the ini's, unless those are still layout 1's: then
@@ -743,19 +740,17 @@ void show_pad_rows(const std::array<std::string, kPadButtonCount>& actions, bool
 void pad_custom_on(bool from_game) {
     g_pad_custom = true;
     WritePrivateProfileStringW(L"Controller", L"Custom", L"1", g_ini.c_str());
-    g_api->set_setting(g_mod, "PadLayout", 1);
-    refresh_row("PadLayout");
     bool stock = true;
     for (int c = 0; c < kPadButtonCount; ++c) stock = stock && !_stricmp(g_pad_action[c].c_str(), kPadButtons[c].stock);
-    if ((from_game || stock) && g_game_layout_seen) {
+    const auto* start = g_pad_from ? g_pad_from : (g_game_layout_seen ? &g_game_layout : nullptr);
+    if ((from_game || stock) && start) {
         for (int c = 0; c < kPadButtonCount; ++c)
-            if (const char* name = pad_action_name(g_game_layout[c]); name && _stricmp(name, g_pad_action[c].c_str()))
+            if (const char* name = pad_action_name((*start)[c]); name && _stricmp(name, g_pad_action[c].c_str()))
                 set_pad_button(c, name);
         g_api->log(g_mod, "custom controller layout on, starting from the game's layout");
     } else {
         g_api->log(g_mod, "custom controller layout on");
     }
-    show_pad_rows(g_pad_action);
 }
 
 void pad_row_changed(void*, const char* key, int value) {
@@ -766,7 +761,6 @@ void pad_row_changed(void*, const char* key, int value) {
         } else if (!value && g_pad_custom) {
             g_pad_custom = false;
             WritePrivateProfileStringW(L"Controller", L"Custom", L"0", g_ini.c_str());
-            if (g_game_layout_seen) show_pad_rows(g_game_layout);
             g_api->log(g_mod, "custom controller layout off");
         }
         g_pad_apply = true;
@@ -777,15 +771,14 @@ void pad_row_changed(void*, const char* key, int value) {
         if (value < 0 || value >= static_cast<int>(g_pad_choices[c].size())) return;
         if (!g_pad_custom) pad_custom_on(true);   // a button changed: the layout is the custom one now
         set_pad_button(c, g_pad_choices[c][value]);
-        g_api->set_setting(g_mod, key, value);    // after show_pad_rows, which showed the game's
         g_pad_apply = true;
         return;
     }
 }
 
-// The layout row, then a row for each button: its action, from the list above, or what the ini
-// has if that's another of the game's.
-void add_controller_rows(void (*add_row)(const FH2Setting&)) {
+// Each button row's choices: the actions above, or what the ini has if that's another of the game's.
+// The rows themselves go on the game's Settings > Controls page (see "The controller rows").
+void set_up_controller_rows() {
     const std::wstring mods = std::wstring(g_api->azimuth_dir) + L"\\fh2-mods\\";
     for (const wchar_t* other : {L"FH2Controls.dll", L"CustomBindings.dll"})
         if (GetFileAttributesW((mods + other).c_str()) != INVALID_FILE_ATTRIBUTES) {
@@ -794,46 +787,15 @@ void add_controller_rows(void (*add_row)(const FH2Setting&)) {
             return;
         }
     std::lock_guard<std::mutex> lock(g_pad_mx);
-    static const char* layouts[2];
-    layouts[0] = lang::tr("Game's");
-    layouts[1] = lang::tr("Custom");
-    FH2Setting layout{};
-    layout.size         = sizeof layout;
-    layout.key          = "PadLayout";
-    layout.label        = lang::tr("Controller layout");
-    layout.description  = lang::tr("Game's uses the layout picked in Settings > Controls. Custom uses the buttons below, starting from the layout you had. Changes apply at once.");
-    layout.kind         = FH2_SETTING_CHOICE;
-    layout.choices      = layouts;
-    layout.choice_count = 2;
-    layout.value        = g_pad_custom ? 1 : 0;
-    layout.on_change    = pad_row_changed;
-    add_row(layout);
-    static std::string keys[kPadButtonCount];
-    static std::vector<std::string> labels[kPadButtonCount];
-    for (int c : kPadRowOrder) {
-        auto& choices = g_pad_choices[c];
+    for (int c = 0; c < kPadButtonCount; ++c) {
         for (const PadAction& a : kPadActions) {
-            choices.push_back(a.name);
-            labels[c].push_back(lang::tr(a.label));
+            g_pad_choices[c].push_back(a.name);
+            g_pad_labels[c].push_back(lang::tr(a.label));
         }
         if (pad_row_value(c, g_pad_action[c]) < 0) {   // another of the game's names, from the ini
-            choices.push_back(g_pad_action[c]);
-            labels[c].push_back(g_pad_action[c]);
+            g_pad_choices[c].push_back(g_pad_action[c]);
+            g_pad_labels[c].push_back(g_pad_action[c]);
         }
-        std::vector<const char*> names;
-        for (const std::string& l : labels[c]) names.push_back(l.c_str());
-        keys[c] = pad_row_key(c);
-        FH2Setting s{};
-        s.size         = sizeof s;
-        s.key          = keys[c].c_str();
-        s.label        = lang::tr(kPadButtons[c].label);
-        s.description  = lang::tr("The action on this button of the controller, with the custom layout. Changing it makes the layout Custom. Map opens the map while you drive.");
-        s.kind         = FH2_SETTING_CHOICE;
-        s.choices      = names.data();
-        s.choice_count = static_cast<uint32_t>(names.size());
-        s.value        = pad_row_value(c, g_pad_action[c]);
-        s.on_change    = pad_row_changed;
-        add_row(s);
     }
     g_pad_rows = true;
 }
@@ -953,7 +915,7 @@ void add_keyboard_rows() {
         s.on_change    = keyboard_row_changed;
         add_row(s);
     }
-    add_controller_rows(add_row);
+    set_up_controller_rows();
 }
 
 void load_settings() {
@@ -2119,7 +2081,6 @@ void* load_layout(void* bindings, int id, uint8_t kind, void* options) {
     if (real) {
         std::lock_guard<std::mutex> lock(g_pad_mx);
         g_game_layout_seen = true;
-        if (!g_pad_custom) show_pad_rows(g_game_layout, false);   // the page shows the layout in use
     }
     if (custom) logf("controller layout: the custom one ([Controller])%s", g_map_input.load() >= 0 ? ", with Map on a button" : "");
     else logf("controller layout: the game's layout %d", id + 1);
@@ -2160,6 +2121,498 @@ void pad_apply_frame() {
     }
 }
 
+// ---- the controller rows, on Settings > Controls ------------------------------------------------
+// The game's Settings > Controls page (Scenes/Anthem/A_ControllerOptions.xaml, class ControllerOptions)
+// is a list of rows bound to properties of the page: "Layout", "RumbleSetting"... Ours go under them:
+// "Controller layout" (Game's / Custom), then a row for each button.
+//
+// The properties. A page's properties are descriptors in a list on its type (ControllerOptions' type
+// is at 0x351BBB0, the list at +0x40; its set-up, 0xD012E0, adds the game's own with 0x155EE30). Ours
+// are copies of one of the game's float properties (0xED6E90 returns it) with our name, getter and
+// setter: the getter (out, property, page) boxes a float (0x3F5990), the setter (property, page,
+// boxed) finds it at boxed+0x28. 0xCF9C60 (page, property) has the page's bindings read one again.
+//
+// The rows. The game's own rows are SpinnerControls, which take their choices from a list the page
+// makes. Ours are Sliders from 0 to the number of choices, drawn like a spinner: the label, the two
+// arrows, and a text for each choice of which the slider's value shows one. Their styles and the rows
+// are put into the page's XAML as it's read (edit_page, with the Settings page's tile), in the
+// language in use.
+constexpr uintptr_t RVA_CONTROLS_TYPE_INIT = 0xD012E0;
+constexpr uintptr_t RVA_CONTROLS_TYPE      = 0x351BBB0;
+constexpr uintptr_t RVA_CONTROLS_REGISTER  = 0xD013D8;   // lea rcx, [type]; call register: in the set-up
+constexpr uintptr_t RVA_REGISTER_PROPERTY  = 0x155EE30;  // (type, link)
+constexpr uintptr_t RVA_FLOAT_PROPERTY     = 0xED6E90;
+constexpr uintptr_t RVA_PAD_OBJECT_INIT        = 0x143EB80;
+constexpr uintptr_t RVA_PAD_BOX_FLOAT          = 0x3F5990;
+constexpr uintptr_t RVA_PROPERTY_CHANGED   = 0xCF9C60;
+
+struct NativeProperty {
+    void** vtable;
+    uint8_t header[0x20];
+    void* getter;
+    void* setter;
+    void* unused;
+    const char* name;
+    void* type;
+    uint64_t flags;
+};
+static_assert(sizeof(NativeProperty) == 0x58, "the game's property layout");
+struct PropertyLink {
+    NativeProperty* property;
+    PropertyLink* next;
+};
+
+// ---- the game's layouts, for the rows while the page's Layout row changes ----------------------
+// While "Controller layout" is Game's, the rows show the layout picked in the page's Layout row, as
+// its diagram does, not only once it's accepted: the page's value is 0xD12F00(page) (0-based), and
+// each layout's buttons are its row of the game database's ControllerLayouts (read once, with
+// Windows' own SQLite). Changing the Layout row goes through 0xD160F0(page, value), which is hooked
+// to have the page read our rows again.
+constexpr uintptr_t RVA_PAGE_LAYOUT     = 0xD12F00;   // int (page)
+constexpr uintptr_t RVA_PAGE_SET_LAYOUT = 0xD160F0;   // void (page, int)
+std::vector<std::array<std::string, kPadButtonCount>> g_layouts;   // by LayoutId; read once, then only read
+bool g_page_layout_ok = false;                                      // the two functions are as expected
+
+void read_game_layouts() {
+    HMODULE sql = LoadLibraryW(L"winsqlite3.dll");
+    if (!sql || !g_api->game_dir || !*g_api->game_dir) return;
+    using OpenFn     = int (*)(const char*, void**, int, const char*);
+    using PrepareFn  = int (*)(void*, const char*, int, void**, const char**);
+    using StepFn     = int (*)(void*);
+    using ColumnInt  = int (*)(void*, int);
+    using ColumnText = const unsigned char* (*)(void*, int);
+    using DoneFn     = int (*)(void*);
+    auto open     = reinterpret_cast<OpenFn>(GetProcAddress(sql, "sqlite3_open_v2"));
+    auto prepare  = reinterpret_cast<PrepareFn>(GetProcAddress(sql, "sqlite3_prepare_v2"));
+    auto step     = reinterpret_cast<StepFn>(GetProcAddress(sql, "sqlite3_step"));
+    auto col_int  = reinterpret_cast<ColumnInt>(GetProcAddress(sql, "sqlite3_column_int"));
+    auto col_text = reinterpret_cast<ColumnText>(GetProcAddress(sql, "sqlite3_column_text"));
+    auto finalize = reinterpret_cast<DoneFn>(GetProcAddress(sql, "sqlite3_finalize"));
+    auto close    = reinterpret_cast<DoneFn>(GetProcAddress(sql, "sqlite3_close"));
+    if (!open || !prepare || !step || !col_int || !col_text || !finalize || !close) return;
+    std::string path;
+    for (const wchar_t* c = g_api->game_dir; *c; ++c) path += *c < 128 ? static_cast<char>(*c) : '?';
+    path = "file:" + path + "\\media\\Stripped\\gamedbRC.slt?mode=ro";
+    for (char& c : path)
+        if (c == '\\') c = '/';
+    void* db = nullptr;
+    if (open(path.c_str(), &db, 0x01 | 0x40, nullptr) != 0 || !db) {   // READONLY | URI
+        if (db) close(db);
+        return;
+    }
+    std::string q = "SELECT LayoutId";
+    for (const PadButton& b : kPadButtons) q += std::string(",") + b.column;
+    q += " FROM ControllerLayouts ORDER BY LayoutId";
+    void* st = nullptr;
+    if (prepare(db, q.c_str(), -1, &st, nullptr) == 0 && st) {
+        while (step(st) == 100) {   // SQLITE_ROW
+            const int id = col_int(st, 0);
+            if (id < 0 || id > 63) continue;
+            if (static_cast<int>(g_layouts.size()) <= id) g_layouts.resize(id + 1);
+            for (int c = 0; c < kPadButtonCount; ++c) {
+                const unsigned char* t = col_text(st, c + 1);
+                g_layouts[id][c] = t ? reinterpret_cast<const char*>(t) : "";
+            }
+        }
+        finalize(st);
+    }
+    close(db);
+    logf("the game's controller layouts: %d", static_cast<int>(g_layouts.size()));
+}
+
+// The page's Layout row's layout's buttons, if it's known (g_pad_mx held).
+const std::array<std::string, kPadButtonCount>* page_layout(void* page) {
+    if (!page || !g_page_layout_ok) return nullptr;
+    int id = -1;
+    __try {
+        id = reinterpret_cast<int (*)(void*)>(g_base + RVA_PAGE_LAYOUT)(page);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+    return id >= 0 && id < static_cast<int>(g_layouts.size()) ? &g_layouts[id] : nullptr;
+}
+
+constexpr int kPadRowCount = kPadButtonCount + 1;   // the layout row, then the buttons in kPadRowOrder
+NativeProperty g_pad_props[kPadRowCount];
+PropertyLink g_pad_links[kPadRowCount];
+std::string g_pad_prop_names[kPadRowCount];
+
+// A row's value: the layout row's 0 Game's, 1 Custom; a button row's place in its choices.
+int pad_native_value(int row, void* page = nullptr) {
+    std::lock_guard<std::mutex> lock(g_pad_mx);
+    if (row == 0) return g_pad_custom ? 1 : 0;
+    const int c = kPadRowOrder[row - 1];
+    const auto* picked = g_pad_custom ? nullptr : page_layout(page);   // Game's: the page's pick, as its diagram shows
+    const int v = pad_row_value(c, (picked ? *picked : pad_shown())[c]);
+    return v < 0 ? 0 : v;
+}
+
+void** pad_native_get(void** out, NativeProperty* property, void* page) {
+    const float value = static_cast<float>(pad_native_value(static_cast<int>(property - g_pad_props), page));
+    *out = nullptr;
+    return reinterpret_cast<void** (*)(void**, const float*)>(g_base + RVA_PAD_BOX_FLOAT)(out, &value);
+}
+
+void pad_native_set(NativeProperty* property, void* page, void* boxed) {
+    const int row = static_cast<int>(property - g_pad_props);
+    float f = -1;
+    if (!boxed || row < 0 || row >= kPadRowCount) return;
+    std::memcpy(&f, static_cast<uint8_t*>(boxed) + 0x28, sizeof f);
+    if (!(f >= 0 && f < 1000)) return;
+    const int value = static_cast<int>(f + 0.5f);
+    if (value == pad_native_value(row, page)) return;   // the page telling us what we told it
+    const std::string key = row == 0 ? "PadLayout" : pad_row_key(kPadRowOrder[row - 1]);
+    {
+        std::lock_guard<std::mutex> lock(g_pad_mx);
+        g_pad_from = page_layout(page);
+    }
+    pad_row_changed(nullptr, key.c_str(), value);
+    {
+        std::lock_guard<std::mutex> lock(g_pad_mx);
+        g_pad_from = nullptr;
+    }
+    // One row can change the others (a button makes the layout Custom; the layout row swaps every
+    // button's), so the page reads them all again.
+    const auto changed = reinterpret_cast<void (*)(void*, NativeProperty*)>(g_base + RVA_PROPERTY_CHANGED);
+    if (page)
+        for (NativeProperty& p : g_pad_props) changed(page, &p);
+}
+
+// Text for a page read as the Settings pages are: not as UTF-8, so what isn't ASCII goes as
+// character references (as tile_title does).
+std::string xaml_text(const std::string& utf8) {
+    const std::string s = xml_escape(utf8);
+    const int n         = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
+    std::wstring w(n > 0 ? n : 0, L'\0');
+    if (n > 0) MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), w.data(), n);
+    std::string o;
+    for (std::size_t i = 0; i < w.size(); ++i) {
+        uint32_t c = w[i];
+        if (c >= 0xD800 && c < 0xDC00 && i + 1 < w.size()) c = 0x10000 + ((c - 0xD800) << 10) + (w[++i] - 0xDC00);
+        char ref[16];
+        if (c < 0x80) o += static_cast<char>(c);
+        else o.append(ref, static_cast<std::size_t>(std::snprintf(ref, sizeof ref, "&#x%X;", c)));
+    }
+    return o;
+}
+
+// A row's style: a slider drawn as the game draws a spinner, with a text for each choice.
+std::string pad_row_style(const std::string& key, const std::vector<std::string>& labels) {
+    const int last = static_cast<int>(labels.size()) - 1;
+    std::string x = "            <Style x:Key=\"" + key + "\" TargetType=\"Slider\" BasedOn=\"{StaticResource A_Style_Slider_Options}\">\r\n"
+                    "                <Setter Property=\"Minimum\" Value=\"0\" />\r\n"
+                    "                <Setter Property=\"Maximum\" Value=\"" + std::to_string(last) + "\" />\r\n"
+                    "                <Setter Property=\"SmallChange\" Value=\"1\" />\r\n"
+                    "                <Setter Property=\"LargeChange\" Value=\"1\" />\r\n"
+                    "                <Setter Property=\"Template\">\r\n"
+                    "                    <Setter.Value>\r\n"
+                    "                        <ControlTemplate TargetType=\"Slider\">\r\n"
+                    "                            <Grid FocusManager.IsFocusScope=\"True\" VerticalAlignment=\"Center\">\r\n"
+                    "                                <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>\r\n"
+                    "                                <local:FZTextBlock Text=\"{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}\" Style=\"{StaticResource A_Style_SliderControlText}\" HorizontalAlignment=\"Left\" />\r\n"
+                    "                                <Grid Grid.Column=\"1\">\r\n"
+                    "                                    <Track x:Name=\"PART_Track\" Opacity=\"0\" />\r\n"
+                    "                                    <DockPanel>\r\n"
+                    "                                        <Grid DockPanel.Dock=\"Left\"><ContentControl x:Name=\"LeftArrow\" Style=\"{StaticResource A_Style_Arrow_Left}\" /></Grid>\r\n"
+                    "                                        <Grid DockPanel.Dock=\"Right\"><ContentControl x:Name=\"RightArrow\" Style=\"{StaticResource A_Style_Arrow_Right}\" /></Grid>\r\n"
+                    "                                        <Grid>\r\n";
+    for (int i = 0; i <= last; ++i)
+        x += "                                            <local:FZTextBlock x:Name=\"Choice_" + std::to_string(i) + "\" Text=\"" + xaml_text(labels[i]) +
+             "\" Style=\"{StaticResource A_Style_SliderControlText}\" HorizontalAlignment=\"Center\"" + (i ? " Visibility=\"Hidden\"" : "") + " />\r\n";
+    x += "                                        </Grid>\r\n"
+         "                                    </DockPanel>\r\n"
+         "                                </Grid>\r\n"
+         "                            </Grid>\r\n"
+         "                            <ControlTemplate.Triggers>\r\n";
+    for (int i = 0; i <= last; ++i) {
+        x += "                                <Trigger Property=\"Value\" Value=\"" + std::to_string(i) + "\">\r\n";
+        if (i == 0) x += "                                    <Setter TargetName=\"LeftArrow\" Property=\"Visibility\" Value=\"Hidden\" />\r\n";
+        if (i == last) x += "                                    <Setter TargetName=\"RightArrow\" Property=\"Visibility\" Value=\"Hidden\" />\r\n";
+        if (i) x += "                                    <Setter TargetName=\"Choice_0\" Property=\"Visibility\" Value=\"Hidden\" />\r\n"
+                    "                                    <Setter TargetName=\"Choice_" + std::to_string(i) + "\" Property=\"Visibility\" Value=\"Visible\" />\r\n";
+        x += "                                </Trigger>\r\n";
+    }
+    x += "                            </ControlTemplate.Triggers>\r\n"
+         "                        </ControlTemplate>\r\n"
+         "                    </Setter.Value>\r\n"
+         "                </Setter>\r\n"
+         "            </Style>\r\n";
+    return x;
+}
+
+// ---- the controller diagram, with the custom layout ---------------------------------------------
+// The page's diagram (the game's A_Style_Control_ControllerMapping) labels each button from the
+// layout picked in its Layout row. With the custom layout on, it's swapped for one of ours: the same
+// picture and label places, the game's label styles, and each button's label from that button's row
+// property, so it follows the rows as they change. The labels the layouts don't set (steering, View,
+// Menu, the right stick) stay the game's. Both are in a slider bound to the "Controller layout" row:
+// its value picks which one shows.
+struct DiagramLabel {
+    int column;           // kPadButtons' index; -1: the game's string `game`
+    const char* game;     // the game's string for it, when it isn't ours
+    const char* path;     // the leader line
+    bool left;            // a label on the left (Canvas.Right) or the right (Canvas.Left)
+    const char* x;        // Canvas.Right on the left, Canvas.Left on the right
+    const char* y;        // Canvas.Top
+};
+const DiagramLabel kDiagram[] = {
+    {18, nullptr, "M 0,65 40,65 119, 144", true, "5", "48"},           // LT
+    {16, nullptr, "M 0,156 160,156", true, "5", "138"},                // LB
+    {-1, "LThumbString", "M 0,243 130,243", true, "5", "225"},
+    {8, nullptr, "M 0,304 187,304", true, "5", "286"},                 // d-pad up
+    {-2, nullptr, "M 0,368 139,368 170,330", true, "5", "350"},        // d-pad left / right: two rows
+    {9, nullptr, "M 197,349 197,490 180,490", true, nullptr, "472"},   // d-pad down
+    {-1, "BackString", "M 216,35 228,35 228,239", true, nullptr, "17"},
+    {-1, "StartString", "M 302,35 290,35 290,239", false, "307", "17"},
+    {19, nullptr, "M 512,65 476,65 396,144", false, "516", "48"},      // RT
+    {17, nullptr, "M 512,156 356,156", false, "516", "138"},           // RB
+    {15, nullptr, "M 512,209 393,209", false, "516", "191"},           // Y
+    {13, nullptr, "M 512,240 424,240", false, "516", "222"},           // B
+    {14, nullptr, "M 512,269 408,269 377,241 361,241", false, "516", "252"},   // X
+    {12, nullptr, "M 512,297 408,297 390,280", false, "516", "281"},   // A
+    {-1, "RThumb1String", "M 512,362 368,362 330,325", false, "516", "345"},
+};
+
+// The diagram's capitals, for what's ASCII (the game's own labels are in capitals).
+std::string diagram_text(const std::string& label) {
+    std::string up = label;
+    for (char& ch : up)
+        if (ch >= 'a' && ch <= 'z') ch = static_cast<char>(ch - 'a' + 'A');
+    return xaml_text(up);
+}
+
+// A label that shows one of `labels` by the slider's value (the button's row property).
+std::string diagram_label_style(const std::string& key, const std::vector<std::string>& labels, bool left) {
+    const int last = static_cast<int>(labels.size()) - 1;
+    const char* text_style = left ? "ControllerLabelLeftSideStyle" : "ControllerLabelRightSideStyle";
+    std::string x = "            <Style x:Key=\"" + key + "\" TargetType=\"Slider\">\r\n"
+                    "                <Setter Property=\"Minimum\" Value=\"0\" />\r\n"
+                    "                <Setter Property=\"Maximum\" Value=\"" + std::to_string(last) + "\" />\r\n"
+                    "                <Setter Property=\"Focusable\" Value=\"False\" />\r\n"
+                    "                <Setter Property=\"IsHitTestVisible\" Value=\"False\" />\r\n"
+                    "                <Setter Property=\"Template\">\r\n"
+                    "                    <Setter.Value>\r\n"
+                    "                        <ControlTemplate TargetType=\"Slider\">\r\n"
+                    "                            <Grid>\r\n"
+                    "                                <Track x:Name=\"PART_Track\" Opacity=\"0\" />\r\n";
+    for (int i = 0; i <= last; ++i)
+        x += "                                <local:FZTextBlock x:Name=\"Label_" + std::to_string(i) + "\" Text=\"" + (i ? diagram_text(labels[i]) : std::string()) +
+             "\" Style=\"{StaticResource " + text_style + "}\" HorizontalAlignment=\"" + (left ? "Right" : "Left") + "\"" +
+             (i ? " Visibility=\"Collapsed\"" : "") + " />\r\n";
+    x += "                            </Grid>\r\n"
+         "                            <ControlTemplate.Triggers>\r\n";
+    for (int i = 1; i <= last; ++i)
+        x += "                                <Trigger Property=\"Value\" Value=\"" + std::to_string(i) + "\">\r\n"
+             "                                    <Setter TargetName=\"Label_0\" Property=\"Visibility\" Value=\"Collapsed\" />\r\n"
+             "                                    <Setter TargetName=\"Label_" + std::to_string(i) + "\" Property=\"Visibility\" Value=\"Visible\" />\r\n"
+             "                                </Trigger>\r\n";
+    x += "                            </ControlTemplate.Triggers>\r\n"
+         "                        </ControlTemplate>\r\n"
+         "                    </Setter.Value>\r\n"
+         "                </Setter>\r\n"
+         "            </Style>\r\n";
+    return x;
+}
+
+// The page's diagram, swapped for ours while the layout is Custom (`styles` gets the labels' styles).
+std::string diagram_xaml(std::string& styles) {   // g_pad_mx held
+    std::vector<std::pair<std::vector<std::string>, bool>> made;   // a style per list of labels and side
+    const auto style_of = [&](int c, bool left) {
+        for (std::size_t i = 0; i < made.size(); ++i)
+            if (made[i].first == g_pad_labels[c] && made[i].second == left) return "FH2Mouse_DiagramLabel_" + std::to_string(i);
+        made.emplace_back(g_pad_labels[c], left);
+        const std::string key = "FH2Mouse_DiagramLabel_" + std::to_string(made.size() - 1);
+        styles += diagram_label_style(key, g_pad_labels[c], left);
+        return key;
+    };
+    const auto place = [](const DiagramLabel& d) {
+        std::string at = std::string(" Canvas.Top=\"") + d.y + "\"";
+        if (d.x) at += std::string(d.left ? " Canvas.Right=\"" : " Canvas.Left=\"") + d.x + "\"";
+        return at;
+    };
+    const auto button = [&](int c, const DiagramLabel& d, const std::string& at) {
+        return "<Slider" + at + " Value=\"{Binding FH2Mouse_Pad_" + kPadButtons[c].column + "}\" Style=\"{StaticResource " + style_of(c, d.left) + "}\" />";
+    };
+    std::string left, right;
+    for (const DiagramLabel& d : kDiagram) {
+        std::string x = "                                        <Canvas>\r\n"
+                        "                                            <Path Style=\"{StaticResource A_ControllerLabel_Path}\" Data=\"" + std::string(d.path) + "\" />\r\n"
+                        "                                            ";
+        if (d.column >= 0) {
+            x += button(d.column, d, place(d));
+        } else if (d.column == -2) {   // left / right on one label
+            x += "<StackPanel Orientation=\"Horizontal\"" + place(d) + ">" + button(10, d, "") +
+                 "<local:FZTextBlock Text=\" / \" Style=\"{StaticResource ControllerLabelLeftSideStyle}\" />" + button(11, d, "") + "</StackPanel>";
+        } else {
+            x += "<local:FZTextBlock" + place(d) + " Text=\"{Binding CurrentControls." + d.game + "}\" Style=\"{StaticResource " +
+                 (d.left ? "ControllerLabelLeftSideStyle" : "ControllerLabelRightSideStyle") + "}\" />";
+        }
+        x += "\r\n                                        </Canvas>\r\n";
+        (d.left ? left : right) += x;
+    }
+    styles += "            <Style x:Key=\"FH2Mouse_Diagram\" TargetType=\"Slider\">\r\n"
+              "                <Setter Property=\"Minimum\" Value=\"0\" />\r\n"
+              "                <Setter Property=\"Maximum\" Value=\"1\" />\r\n"
+              "                <Setter Property=\"Focusable\" Value=\"False\" />\r\n"
+              "                <Setter Property=\"IsHitTestVisible\" Value=\"False\" />\r\n"
+              "                <Setter Property=\"HorizontalAlignment\" Value=\"Center\" />\r\n"
+              "                <Setter Property=\"VerticalAlignment\" Value=\"Center\" />\r\n"
+              "                <Setter Property=\"Template\">\r\n"
+              "                    <Setter.Value>\r\n"
+              "                        <ControlTemplate TargetType=\"Slider\">\r\n"
+              "                            <Grid>\r\n"
+              "                                <Track x:Name=\"PART_Track\" Opacity=\"0\" />\r\n"
+              "                                <Control x:Name=\"GameDiagram\" Style=\"{StaticResource A_Style_Control_ControllerMapping}\" />\r\n"
+              "                                <Canvas x:Name=\"OurDiagram\" Visibility=\"Collapsed\" HorizontalAlignment=\"Center\" VerticalAlignment=\"Center\" Width=\"512\" Height=\"512\">\r\n"
+              "                                    <local:FZMaterial HorizontalAlignment=\"Center\" VerticalAlignment=\"Center\" Width=\"512\" Height=\"512\" ImageSource=\"/Textures/Data_Bound/UI_Symbols/Help_Controller.png\" />\r\n"
+              "                                    <Canvas HorizontalAlignment=\"Right\">\r\n" +
+              left +
+              "                                    </Canvas>\r\n" +
+              right +
+              "                                </Canvas>\r\n"
+              "                            </Grid>\r\n"
+              "                            <ControlTemplate.Triggers>\r\n"
+              "                                <Trigger Property=\"Value\" Value=\"1\">\r\n"
+              "                                    <Setter TargetName=\"GameDiagram\" Property=\"Visibility\" Value=\"Collapsed\" />\r\n"
+              "                                    <Setter TargetName=\"OurDiagram\" Property=\"Visibility\" Value=\"Visible\" />\r\n"
+              "                                </Trigger>\r\n"
+              "                            </ControlTemplate.Triggers>\r\n"
+              "                        </ControlTemplate>\r\n"
+              "                    </Setter.Value>\r\n"
+              "                </Setter>\r\n"
+              "            </Style>\r\n";
+    return "<Slider Value=\"{Binding " + g_pad_prop_names[0] + "}\" Style=\"{StaticResource FH2Mouse_Diagram}\">";
+}
+
+std::atomic<bool> g_pad_native_wanted{false};   // the custom layout works: the page gets its rows
+std::atomic<int> g_pad_native{0};               // the properties are on the page's type: 1 yes, -1 couldn't be
+
+// The Controls page's XAML with our styles in its resources and our rows at the end of its list.
+// False (and `text` as it was) if the page isn't as expected.
+bool add_controls_rows(std::string& text) {
+    static const char resources[] = "<ResourceDictionary>";
+    static const char list_end[]  = "</local:CommonListBox>";
+    const std::size_t res = text.find(resources);
+    if (res == std::string::npos || text.find("x:Name=\"BasicOptionsList\"") == std::string::npos ||
+        text.find("FH2Mouse_PadRow_") != std::string::npos)
+        return false;
+    const std::size_t res_at = text.find('\n', res);
+    const std::size_t end    = text.find(list_end, res);
+    if (res_at == std::string::npos || end == std::string::npos) return false;
+    const std::size_t rows_at = text.rfind('\n', end);   // the start of the list's closing line
+    if (rows_at == std::string::npos || rows_at < res_at) return false;
+
+    std::lock_guard<std::mutex> lock(g_pad_mx);
+    std::vector<std::vector<std::string>> lists;   // the distinct lists of choices: a style each
+    const auto style_of = [&lists](const std::vector<std::string>& labels) {
+        for (std::size_t i = 0; i < lists.size(); ++i)
+            if (lists[i] == labels) return "FH2Mouse_PadRow_" + std::to_string(i);
+        lists.push_back(labels);
+        return "FH2Mouse_PadRow_" + std::to_string(lists.size() - 1);
+    };
+    const auto row = [](const std::string& label, const std::string& property, const std::string& style) {
+        return "                                    <Slider Value=\"{Binding " + property + "}\" Tag=\"" + xaml_text(label) +
+               "\" Style=\"{StaticResource " + style + "}\" />\r\n";
+    };
+    std::string rows = row(lang::tr("Controller layout"), g_pad_prop_names[0], style_of({lang::tr("Game's"), lang::tr("Custom")}));
+    for (int r = 1; r < kPadRowCount; ++r) {
+        const int c = kPadRowOrder[r - 1];
+        rows += row(lang::tr(kPadButtons[c].label), g_pad_prop_names[r], style_of(g_pad_labels[c]));
+    }
+    std::string styles;
+    for (std::size_t i = 0; i < lists.size(); ++i) styles += pad_row_style("FH2Mouse_PadRow_" + std::to_string(i), lists[i]);
+    // The diagram: the game's control (after the list, so the later places go first) becomes ours.
+    static const char game_diagram[] = "<Control Style=\"{StaticResource A_Style_Control_ControllerMapping}\">";
+    const std::size_t diagram_at = text.find(game_diagram, end);
+    const std::size_t diagram_end = diagram_at == std::string::npos ? std::string::npos : text.find("</Control>", diagram_at);
+    if (diagram_end != std::string::npos) {
+        text.replace(diagram_end, std::strlen("</Control>"), "</Slider>");
+        text.replace(diagram_at, std::strlen(game_diagram), diagram_xaml(styles));
+        // the diagram's <Control.LayoutTransform> is now the slider's
+        const std::size_t lt = text.find("<Control.LayoutTransform>", diagram_at);
+        const std::size_t lt_end = lt == std::string::npos ? std::string::npos : text.find("</Control.LayoutTransform>", lt);
+        if (lt_end != std::string::npos && lt_end < text.find("</Slider>", diagram_at)) {
+            text.replace(lt_end, std::strlen("</Control.LayoutTransform>"), "</Slider.LayoutTransform>");
+            text.replace(lt, std::strlen("<Control.LayoutTransform>"), "<Slider.LayoutTransform>");
+        }
+    }
+    text.insert(rows_at + 1, rows);     // the later place first
+    text.insert(res_at + 1, styles);
+    return true;
+}
+
+// The page's Layout row changed: the rows show the new pick (while it's Game's).
+using SetLayoutFn = void (*)(void*, int);
+SetLayoutFn o_set_layout = nullptr;
+void d_set_layout(void* page, int value) {
+    o_set_layout(page, value);
+    const auto changed = reinterpret_cast<void (*)(void*, NativeProperty*)>(g_base + RVA_PROPERTY_CHANGED);
+    __try {
+        for (int r = 1; r < kPadRowCount; ++r) changed(page, &g_pad_props[r]);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
+}
+
+void hook_page_layout() {
+    static const uint8_t get_bytes[] = {0x53, 0x48, 0x81, 0xEC, 0x80, 0x00, 0x00, 0x00, 0x48, 0xC7, 0x44, 0x24, 0x20, 0xFE};   // after push rbx
+    static const uint8_t set_bytes[] = {0x48, 0x8B, 0xC4, 0x57, 0x48, 0x81, 0xEC, 0x80, 0x00, 0x00, 0x00, 0x48, 0xC7, 0x40, 0xA8, 0xFE};
+    if (std::memcmp(g_base + RVA_PAGE_LAYOUT + 1, get_bytes, sizeof get_bytes) || g_base[RVA_PAGE_LAYOUT] != 0x40 ||
+        std::memcmp(g_base + RVA_PAGE_SET_LAYOUT, set_bytes, sizeof set_bytes)) {
+        logf("the Controls page's Layout row isn't as expected: the rows follow it once it's accepted");
+        return;
+    }
+    read_game_layouts();
+    if (g_layouts.empty()) return;
+    FH2Hook* h = g_api->hook_function(g_mod, "Controls page: set Layout (the controller rows follow it)", g_base + RVA_PAGE_SET_LAYOUT,
+                                      reinterpret_cast<void*>(&d_set_layout), reinterpret_cast<void**>(&o_set_layout));
+    g_page_layout_ok = h && g_api->enable_hooks(g_mod, h) == 1;
+}
+
+// The properties onto the page's type, the first time the page is read (on the UI thread, with the
+// game's types made); the rows go into the page then and each time after. False: no rows.
+bool add_controls_page_rows() {
+    static const uint8_t init_bytes[]     = {0x40, 0x53, 0x48, 0x81, 0xEC, 0xD0, 0x00, 0x00, 0x00, 0x48, 0xC7, 0x44, 0x24, 0x20, 0xFE};
+    static const uint8_t register_bytes[] = {0x48, 0x8B, 0x41, 0x40, 0x48, 0x89, 0x42, 0x08, 0x48, 0x89, 0x51, 0x40};
+    static const uint8_t float_bytes[]    = {0x40, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x48, 0xC7, 0x44, 0x24, 0x20, 0xFE};
+    static const uint8_t object_bytes[]   = {0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8D};
+    static const uint8_t box_bytes[]      = {0x40, 0x53, 0x48, 0x83, 0xEC, 0x30, 0x48, 0x8B, 0xD9, 0xC7, 0x44, 0x24};
+    static const uint8_t changed_bytes[]  = {0x40, 0x57, 0x48, 0x83, 0xEC, 0x60, 0x48, 0xC7, 0x44, 0x24, 0x20, 0xFE};
+    int32_t type_disp = 0, call_disp = 0;
+    std::memcpy(&type_disp, g_base + RVA_CONTROLS_REGISTER + 3, 4);
+    std::memcpy(&call_disp, g_base + RVA_CONTROLS_REGISTER + 8, 4);
+    if (std::memcmp(g_base + RVA_CONTROLS_TYPE_INIT, init_bytes, sizeof init_bytes) ||
+        std::memcmp(g_base + RVA_REGISTER_PROPERTY, register_bytes, sizeof register_bytes) ||
+        std::memcmp(g_base + RVA_FLOAT_PROPERTY, float_bytes, sizeof float_bytes) ||
+        std::memcmp(g_base + RVA_PAD_OBJECT_INIT, object_bytes, sizeof object_bytes) ||
+        std::memcmp(g_base + RVA_PAD_BOX_FLOAT, box_bytes, sizeof box_bytes) ||
+        std::memcmp(g_base + RVA_PROPERTY_CHANGED, changed_bytes, sizeof changed_bytes) ||
+        std::memcmp(g_base + RVA_CONTROLS_REGISTER, "\x48\x8D\x0D", 3) || g_base[RVA_CONTROLS_REGISTER + 7] != 0xE8 ||
+        RVA_CONTROLS_REGISTER + 7 + type_disp != RVA_CONTROLS_TYPE || RVA_CONTROLS_REGISTER + 12 + call_disp != RVA_REGISTER_PROPERTY) {
+        logf("the game's Controls page isn't as expected: no controller rows on it");
+        return false;
+    }
+    reinterpret_cast<void (*)()>(g_base + RVA_CONTROLS_TYPE_INIT)();   // the type, with the game's own properties (once: it's guarded)
+    const NativeProperty* model = reinterpret_cast<NativeProperty* (*)()>(g_base + RVA_FLOAT_PROPERTY)();
+    if (!model || !model->vtable) {
+        logf("no float property to copy: no controller rows on the Controls page");
+        return false;
+    }
+    g_pad_prop_names[0] = "FH2Mouse_PadLayout";
+    for (int r = 1; r < kPadRowCount; ++r) g_pad_prop_names[r] = std::string("FH2Mouse_Pad_") + kPadButtons[kPadRowOrder[r - 1]].column;
+    for (int r = 0; r < kPadRowCount; ++r) {
+        NativeProperty& p = g_pad_props[r];
+        reinterpret_cast<void (*)(void*)>(g_base + RVA_PAD_OBJECT_INIT)(&p);
+        p.vtable = model->vtable;
+        std::memcpy(reinterpret_cast<uint8_t*>(&p) + 0x28, reinterpret_cast<const uint8_t*>(model) + 0x28, 0x30);
+        p.name   = g_pad_prop_names[r].c_str();
+        p.getter = reinterpret_cast<void*>(&pad_native_get);
+        p.setter = reinterpret_cast<void*>(&pad_native_set);
+        g_pad_links[r].property = &p;
+        reinterpret_cast<void (*)(void*, PropertyLink*)>(g_base + RVA_REGISTER_PROPERTY)(g_base + RVA_CONTROLS_TYPE, &g_pad_links[r]);
+    }
+    return true;
+}
+
 void hook_pad_layout() {
     if (!g_pad_rows || g_api->api_version < 7) return;
     // The function's first bytes may already be a hook's jump (the platform checks those against the exe).
@@ -2197,6 +2650,8 @@ void hook_pad_layout() {
                       !std::memcmp(g_base + RVA_MAP_ASK, ask_bytes, sizeof ask_bytes);
     logf("custom controller layout ready (%s)%s", g_pad_custom ? "on" : "off",
          g_map_button_ok ? "" : "; the map's code isn't as expected: Map on a button does nothing");
+    g_pad_native_wanted = true;
+    hook_page_layout();
 }
 
 bool was_pressed(void* input, int context, int control, uint8_t a) {
@@ -4956,12 +5411,22 @@ void edit_page(void** out) {
     const char* bytes = nullptr;
     int length        = 0;
     if (!resource_text(*out, &bytes, &length)) return;
-    // Only the two pages: their class is near the top.
+    // Only the three pages: their class is near the top.
     const int head = std::min(length, 2048);
     const bool settings = has(bytes, head, "x:Class=\"ForzaUI.A_PauseOptions\"");
     const bool mods     = !settings && has(bytes, head, "x:Class =\"ForzaUI.A_HudOptions\"");   // the platform's (see its settings.cpp)
-    if (!settings && !mods) return;
+    const bool controls = !settings && !mods && g_pad_native_wanted.load() && has(bytes, head, "x:Class=\"ForzaUI.A_ControllerOptions\"");
+    if (!settings && !mods && !controls) return;
     std::string text(bytes, static_cast<std::size_t>(length));
+    if (controls) {
+        static std::atomic<int> told{0};   // the page is read each time it shows
+        if (!g_pad_native.load()) g_pad_native = add_controls_page_rows() ? 1 : -1;
+        if (g_pad_native.load() < 0) return;
+        const bool added = add_controls_rows(text) && replace_resource(out, text);
+        if (!told.exchange(added ? 1 : 2))
+            logf(added ? "Settings > Controls: the controller's rows added" : "the Controls page isn't as expected: no controller rows on it");
+        return;
+    }
     if (settings) {
         if (!add_settings_tile(text) || !replace_resource(out, text)) {
             if (!g_kbm_failed.exchange(true)) logf("the Settings page isn't as expected: the keys stay on the MODS page");
