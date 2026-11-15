@@ -253,3 +253,75 @@ msgstr "メニュー: 左スティック押し込み"
 
 msgid "Menu: right stick click"
 msgstr "メニュー: 右スティック押し込み"
+
+msgid "Controller layout"
+msgstr "コントローラー配置"
+
+msgid "Game's"
+msgstr "ゲーム設定"
+
+msgid "None"
+msgstr "なし"
+
+msgid "Look forward"
+msgstr "前方を見る"
+
+msgid "Controller: A"
+msgstr "コントローラー: A"
+
+msgid "Controller: B"
+msgstr "コントローラー: B"
+
+msgid "Controller: X"
+msgstr "コントローラー: X"
+
+msgid "Controller: Y"
+msgstr "コントローラー: Y"
+
+msgid "Controller: LB"
+msgstr "コントローラー: LB"
+
+msgid "Controller: RB"
+msgstr "コントローラー: RB"
+
+msgid "Controller: LT"
+msgstr "コントローラー: LT"
+
+msgid "Controller: RT"
+msgstr "コントローラー: RT"
+
+msgid "Controller: d-pad up"
+msgstr "コントローラー: 方向パッド上"
+
+msgid "Controller: d-pad down"
+msgstr "コントローラー: 方向パッド下"
+
+msgid "Controller: d-pad left"
+msgstr "コントローラー: 方向パッド左"
+
+msgid "Controller: d-pad right"
+msgstr "コントローラー: 方向パッド右"
+
+msgid "Controller: left stick up"
+msgstr "コントローラー: 左スティック上"
+
+msgid "Controller: left stick down"
+msgstr "コントローラー: 左スティック下"
+
+msgid "Controller: left stick click"
+msgstr "コントローラー: 左スティック押し込み"
+
+msgid "Controller: right stick up"
+msgstr "コントローラー: 右スティック上"
+
+msgid "Controller: right stick down"
+msgstr "コントローラー: 右スティック下"
+
+msgid "Controller: right stick left"
+msgstr "コントローラー: 右スティック左"
+
+msgid "Controller: right stick right"
+msgstr "コントローラー: 右スティック右"
+
+msgid "Controller: right stick click"
+msgstr "コントローラー: 右スティック押し込み"

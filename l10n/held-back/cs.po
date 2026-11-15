@@ -253,3 +253,75 @@ msgstr "Nabídka: stisk levé páčky"
 
 msgid "Menu: right stick click"
 msgstr "Nabídka: stisk pravé páčky"
+
+msgid "Controller layout"
+msgstr "Rozložení ovladače"
+
+msgid "Game's"
+msgstr "Ze hry"
+
+msgid "None"
+msgstr "Žádná"
+
+msgid "Look forward"
+msgstr "Pohled dopředu"
+
+msgid "Controller: A"
+msgstr "Ovladač: A"
+
+msgid "Controller: B"
+msgstr "Ovladač: B"
+
+msgid "Controller: X"
+msgstr "Ovladač: X"
+
+msgid "Controller: Y"
+msgstr "Ovladač: Y"
+
+msgid "Controller: LB"
+msgstr "Ovladač: LB"
+
+msgid "Controller: RB"
+msgstr "Ovladač: RB"
+
+msgid "Controller: LT"
+msgstr "Ovladač: LT"
+
+msgid "Controller: RT"
+msgstr "Ovladač: RT"
+
+msgid "Controller: d-pad up"
+msgstr "Ovladač: kříž nahoru"
+
+msgid "Controller: d-pad down"
+msgstr "Ovladač: kříž dolů"
+
+msgid "Controller: d-pad left"
+msgstr "Ovladač: kříž doleva"
+
+msgid "Controller: d-pad right"
+msgstr "Ovladač: kříž doprava"
+
+msgid "Controller: left stick up"
+msgstr "Ovladač: levá páčka nahoru"
+
+msgid "Controller: left stick down"
+msgstr "Ovladač: levá páčka dolů"
+
+msgid "Controller: left stick click"
+msgstr "Ovladač: stisk levé páčky"
+
+msgid "Controller: right stick up"
+msgstr "Ovladač: pravá páčka nahoru"
+
+msgid "Controller: right stick down"
+msgstr "Ovladač: pravá páčka dolů"
+
+msgid "Controller: right stick left"
+msgstr "Ovladač: pravá páčka doleva"
+
+msgid "Controller: right stick right"
+msgstr "Ovladač: pravá páčka doprava"
+
+msgid "Controller: right stick click"
+msgstr "Ovladač: stisk pravé páčky"

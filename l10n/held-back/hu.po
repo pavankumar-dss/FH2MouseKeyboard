@@ -253,3 +253,75 @@ msgstr "Menü: bal kar lenyomása"
 
 msgid "Menu: right stick click"
 msgstr "Menü: jobb kar lenyomása"
+
+msgid "Controller layout"
+msgstr "Kontrollerkiosztás"
+
+msgid "Game's"
+msgstr "A játéké"
+
+msgid "None"
+msgstr "Nincs"
+
+msgid "Look forward"
+msgstr "Előrenézés"
+
+msgid "Controller: A"
+msgstr "Kontroller: A"
+
+msgid "Controller: B"
+msgstr "Kontroller: B"
+
+msgid "Controller: X"
+msgstr "Kontroller: X"
+
+msgid "Controller: Y"
+msgstr "Kontroller: Y"
+
+msgid "Controller: LB"
+msgstr "Kontroller: LB"
+
+msgid "Controller: RB"
+msgstr "Kontroller: RB"
+
+msgid "Controller: LT"
+msgstr "Kontroller: LT"
+
+msgid "Controller: RT"
+msgstr "Kontroller: RT"
+
+msgid "Controller: d-pad up"
+msgstr "Kontroller: iránypad fel"
+
+msgid "Controller: d-pad down"
+msgstr "Kontroller: iránypad le"
+
+msgid "Controller: d-pad left"
+msgstr "Kontroller: iránypad balra"
+
+msgid "Controller: d-pad right"
+msgstr "Kontroller: iránypad jobbra"
+
+msgid "Controller: left stick up"
+msgstr "Kontroller: bal kar fel"
+
+msgid "Controller: left stick down"
+msgstr "Kontroller: bal kar le"
+
+msgid "Controller: left stick click"
+msgstr "Kontroller: bal kar lenyomása"
+
+msgid "Controller: right stick up"
+msgstr "Kontroller: jobb kar fel"
+
+msgid "Controller: right stick down"
+msgstr "Kontroller: jobb kar le"
+
+msgid "Controller: right stick left"
+msgstr "Kontroller: jobb kar balra"
+
+msgid "Controller: right stick right"
+msgstr "Kontroller: jobb kar jobbra"
+
+msgid "Controller: right stick click"
+msgstr "Kontroller: jobb kar lenyomása"

@@ -253,3 +253,75 @@ msgstr "Menu: wciśnięcie lewej gałki"
 
 msgid "Menu: right stick click"
 msgstr "Menu: wciśnięcie prawej gałki"
+
+msgid "Controller layout"
+msgstr "Układ kontrolera"
+
+msgid "Game's"
+msgstr "Z gry"
+
+msgid "None"
+msgstr "Brak"
+
+msgid "Look forward"
+msgstr "Spójrz do przodu"
+
+msgid "Controller: A"
+msgstr "Kontroler: A"
+
+msgid "Controller: B"
+msgstr "Kontroler: B"
+
+msgid "Controller: X"
+msgstr "Kontroler: X"
+
+msgid "Controller: Y"
+msgstr "Kontroler: Y"
+
+msgid "Controller: LB"
+msgstr "Kontroler: LB"
+
+msgid "Controller: RB"
+msgstr "Kontroler: RB"
+
+msgid "Controller: LT"
+msgstr "Kontroler: LT"
+
+msgid "Controller: RT"
+msgstr "Kontroler: RT"
+
+msgid "Controller: d-pad up"
+msgstr "Kontroler: krzyżak w górę"
+
+msgid "Controller: d-pad down"
+msgstr "Kontroler: krzyżak w dół"
+
+msgid "Controller: d-pad left"
+msgstr "Kontroler: krzyżak w lewo"
+
+msgid "Controller: d-pad right"
+msgstr "Kontroler: krzyżak w prawo"
+
+msgid "Controller: left stick up"
+msgstr "Kontroler: lewa gałka w górę"
+
+msgid "Controller: left stick down"
+msgstr "Kontroler: lewa gałka w dół"
+
+msgid "Controller: left stick click"
+msgstr "Kontroler: wciśnięcie lewej gałki"
+
+msgid "Controller: right stick up"
+msgstr "Kontroler: prawa gałka w górę"
+
+msgid "Controller: right stick down"
+msgstr "Kontroler: prawa gałka w dół"
+
+msgid "Controller: right stick left"
+msgstr "Kontroler: prawa gałka w lewo"
+
+msgid "Controller: right stick right"
+msgstr "Kontroler: prawa gałka w prawo"
+
+msgid "Controller: right stick click"
+msgstr "Kontroler: wciśnięcie prawej gałki"

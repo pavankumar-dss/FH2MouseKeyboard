@@ -253,3 +253,75 @@ msgstr "Menu: clique analógico esq."
 
 msgid "Menu: right stick click"
 msgstr "Menu: clique analógico dir."
+
+msgid "Controller layout"
+msgstr "Layout do controle"
+
+msgid "Game's"
+msgstr "Do jogo"
+
+msgid "None"
+msgstr "Nenhuma"
+
+msgid "Look forward"
+msgstr "Olhar para frente"
+
+msgid "Controller: A"
+msgstr "Controle: A"
+
+msgid "Controller: B"
+msgstr "Controle: B"
+
+msgid "Controller: X"
+msgstr "Controle: X"
+
+msgid "Controller: Y"
+msgstr "Controle: Y"
+
+msgid "Controller: LB"
+msgstr "Controle: LB"
+
+msgid "Controller: RB"
+msgstr "Controle: RB"
+
+msgid "Controller: LT"
+msgstr "Controle: LT"
+
+msgid "Controller: RT"
+msgstr "Controle: RT"
+
+msgid "Controller: d-pad up"
+msgstr "Controle: direcional cima"
+
+msgid "Controller: d-pad down"
+msgstr "Controle: direcional baixo"
+
+msgid "Controller: d-pad left"
+msgstr "Controle: direcional esquerda"
+
+msgid "Controller: d-pad right"
+msgstr "Controle: direcional direita"
+
+msgid "Controller: left stick up"
+msgstr "Controle: analógico esq. cima"
+
+msgid "Controller: left stick down"
+msgstr "Controle: analógico esq. baixo"
+
+msgid "Controller: left stick click"
+msgstr "Controle: clique analógico esq."
+
+msgid "Controller: right stick up"
+msgstr "Controle: analógico dir. cima"
+
+msgid "Controller: right stick down"
+msgstr "Controle: analógico dir. baixo"
+
+msgid "Controller: right stick left"
+msgstr "Controle: analógico dir. esquerda"
+
+msgid "Controller: right stick right"
+msgstr "Controle: analógico dir. direita"
+
+msgid "Controller: right stick click"
+msgstr "Controle: clique analógico dir."

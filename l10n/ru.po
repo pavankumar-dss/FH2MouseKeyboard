@@ -253,3 +253,75 @@ msgstr "Меню: нажатие левого стика"
 
 msgid "Menu: right stick click"
 msgstr "Меню: нажатие правого стика"
+
+msgid "Controller layout"
+msgstr "Раскладка контроллера"
+
+msgid "Game's"
+msgstr "Из игры"
+
+msgid "None"
+msgstr "Нет"
+
+msgid "Look forward"
+msgstr "Смотреть вперёд"
+
+msgid "Controller: A"
+msgstr "Контроллер: A"
+
+msgid "Controller: B"
+msgstr "Контроллер: B"
+
+msgid "Controller: X"
+msgstr "Контроллер: X"
+
+msgid "Controller: Y"
+msgstr "Контроллер: Y"
+
+msgid "Controller: LB"
+msgstr "Контроллер: LB"
+
+msgid "Controller: RB"
+msgstr "Контроллер: RB"
+
+msgid "Controller: LT"
+msgstr "Контроллер: LT"
+
+msgid "Controller: RT"
+msgstr "Контроллер: RT"
+
+msgid "Controller: d-pad up"
+msgstr "Контроллер: крестовина вверх"
+
+msgid "Controller: d-pad down"
+msgstr "Контроллер: крестовина вниз"
+
+msgid "Controller: d-pad left"
+msgstr "Контроллер: крестовина влево"
+
+msgid "Controller: d-pad right"
+msgstr "Контроллер: крестовина вправо"
+
+msgid "Controller: left stick up"
+msgstr "Контроллер: левый стик вверх"
+
+msgid "Controller: left stick down"
+msgstr "Контроллер: левый стик вниз"
+
+msgid "Controller: left stick click"
+msgstr "Контроллер: нажатие левого стика"
+
+msgid "Controller: right stick up"
+msgstr "Контроллер: правый стик вверх"
+
+msgid "Controller: right stick down"
+msgstr "Контроллер: правый стик вниз"
+
+msgid "Controller: right stick left"
+msgstr "Контроллер: правый стик влево"
+
+msgid "Controller: right stick right"
+msgstr "Контроллер: правый стик вправо"
+
+msgid "Controller: right stick click"
+msgstr "Контроллер: нажатие правого стика"

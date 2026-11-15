@@ -253,3 +253,75 @@ msgstr "Menu: linkerstick indrukken"
 
 msgid "Menu: right stick click"
 msgstr "Menu: rechterstick indrukken"
+
+msgid "Controller layout"
+msgstr "Controllerindeling"
+
+msgid "Game's"
+msgstr "Van de game"
+
+msgid "None"
+msgstr "Geen"
+
+msgid "Look forward"
+msgstr "Vooruit kijken"
+
+msgid "Controller: A"
+msgstr "Controller: A"
+
+msgid "Controller: B"
+msgstr "Controller: B"
+
+msgid "Controller: X"
+msgstr "Controller: X"
+
+msgid "Controller: Y"
+msgstr "Controller: Y"
+
+msgid "Controller: LB"
+msgstr "Controller: LB"
+
+msgid "Controller: RB"
+msgstr "Controller: RB"
+
+msgid "Controller: LT"
+msgstr "Controller: LT"
+
+msgid "Controller: RT"
+msgstr "Controller: RT"
+
+msgid "Controller: d-pad up"
+msgstr "Controller: D-pad omhoog"
+
+msgid "Controller: d-pad down"
+msgstr "Controller: D-pad omlaag"
+
+msgid "Controller: d-pad left"
+msgstr "Controller: D-pad links"
+
+msgid "Controller: d-pad right"
+msgstr "Controller: D-pad rechts"
+
+msgid "Controller: left stick up"
+msgstr "Controller: linkerstick omhoog"
+
+msgid "Controller: left stick down"
+msgstr "Controller: linkerstick omlaag"
+
+msgid "Controller: left stick click"
+msgstr "Controller: linkerstick indrukken"
+
+msgid "Controller: right stick up"
+msgstr "Controller: rechterstick omhoog"
+
+msgid "Controller: right stick down"
+msgstr "Controller: rechterstick omlaag"
+
+msgid "Controller: right stick left"
+msgstr "Controller: rechterstick links"
+
+msgid "Controller: right stick right"
+msgstr "Controller: rechterstick rechts"
+
+msgid "Controller: right stick click"
+msgstr "Controller: rechterstick indrukken"
