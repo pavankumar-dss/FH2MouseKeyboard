@@ -1,0 +1,255 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: FH2 Mouse & Keyboard\n"
+"Language: nl\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "KEYBOARD & MOUSE"
+msgstr "TOETSENBORD EN MUIS"
+
+msgctxt "mod.description"
+msgid "Drive with the keyboard, point at things in the menus and click them, drag the map, turn the garage camera, place decals with the keyboard, and fly the photo mode camera, all without picking up a controller."
+msgstr "Rijd met het toetsenbord, wijs en klik in de menu's, sleep de kaart, draai de garagecamera, plaats stickers met het toetsenbord en vlieg met de camera van de fotomodus, allemaal zonder controller."
+
+msgid "Keyboard controls"
+msgstr "Toetsenbordbediening"
+
+msgid "Drive with the keyboard and move around the menus with it. The rows below set the keys."
+msgstr "Rijd met het toetsenbord en navigeer er ook de menu's mee. De rijen hieronder stellen de toetsen in."
+
+msgid "Keyboard icons"
+msgstr "Toetsenbordpictogrammen"
+
+msgid "While you play with the keyboard, the help bar shows its keys instead of the controller's buttons. A button on the controller brings the buttons back."
+msgstr "Terwijl je met het toetsenbord speelt, toont de hulpbalk de toetsen in plaats van de knoppen van de controller. Een knop op de controller brengt de knoppen terug."
+
+msgid "Mouse hover selects"
+msgstr "Selecteren door aanwijzen"
+
+msgid "Moving the mouse over a button, list row or slider selects it. Off, only a click does."
+msgstr "De muis over een knop, lijstregel of schuifregelaar bewegen selecteert die. Uit: alleen een klik doet dat."
+
+msgid "Mouse free look"
+msgstr "Vrij rondkijken met muis"
+
+msgid "While driving, moving the mouse looks around. The cursor stays in the game's window: Alt+Tab to leave it."
+msgstr "Tijdens het rijden kijk je rond door de muis te bewegen. De cursor blijft in het spelvenster: Alt+Tab om het te verlaten."
+
+msgid "Mouse free look sensitivity"
+msgstr "Gevoeligheid rondkijken"
+
+msgid "How far the camera turns for the mouse's movement while you look around. 50 is the usual, 100 twice as far, 0 not at all."
+msgstr "Hoe ver de camera draait bij muisbeweging terwijl je rondkijkt. 50 is normaal, 100 twee keer zo ver, 0 helemaal niet."
+
+msgid "Keyboard preset"
+msgstr "Toetsenbordindeling"
+
+msgid "Sets every key below at once. WS drive, arrow steer is the mod's own layout; AZERTY and QWERTZ put the keys where WASD's are on those keyboards. Changing a key makes it Custom."
+msgstr "Stelt alle toetsen hieronder in één keer in. WS rijden, pijlen sturen is de eigen indeling van de mod; AZERTY en QWERTZ zetten de toetsen waar WASD op die toetsenborden zit. Een toets wijzigen maakt het Aangepast."
+
+msgid "WASD drive"
+msgstr "Rijden met WASD"
+
+msgid "WS drive, arrow steer"
+msgstr "WS rijden, pijlen sturen"
+
+msgid "Arrow drive"
+msgstr "Rijden met pijlen"
+
+msgid "Custom"
+msgstr "Aangepast"
+
+msgid "FH2 ANNA's key while driving, pressing the controller's d-pad for it. The open key is ANNA's whenever you drive, the others only while ANNA's menu is open: a driving key on the same key waits till then."
+msgstr "Toets van FH2 ANNA tijdens het rijden; drukt daarvoor op de d-pad van de controller. De open-toets is van ANNA zolang je rijdt, de andere alleen als ANNA's menu open is: een rijfunctie op dezelfde toets wacht zolang."
+
+msgid "ANNA Drone Mode's key while flying the drone. While it flies only its keys (and the radio's) count, so it can be a driving or menu key too."
+msgstr "Toets van ANNA Drone Mode tijdens het vliegen met de drone. Zolang die vliegt tellen alleen zijn toetsen (en die van de radio), dus het mag ook een rij- of menutoets zijn."
+
+msgid "The key for this in the menus. It does nothing while driving, so it can be a driving key too."
+msgstr "De toets hiervoor in de menu's. Tijdens het rijden doet hij niets, dus het mag ook een rijtoets zijn."
+
+msgid "The key for this while driving: Extra Options' own, pressed on the controller button its ini gives it. It does nothing in the menus, so it can be a menu key too."
+msgstr "De toets hiervoor tijdens het rijden: die van Extra Options zelf, ingedrukt op de controllerknop die zijn ini aangeeft. In de menu's doet hij niets, dus het mag ook een menutoets zijn."
+
+msgid "The key for this while driving. It does nothing in the menus, so it can be a menu key too."
+msgstr "De toets hiervoor tijdens het rijden. In de menu's doet hij niets, dus het mag ook een menutoets zijn."
+
+msgid "Gas"
+msgstr "Gas"
+
+msgid "Brake / reverse"
+msgstr "Remmen / achteruit"
+
+msgid "Steer left"
+msgstr "Naar links sturen"
+
+msgid "Steer right"
+msgstr "Naar rechts sturen"
+
+msgid "Handbrake"
+msgstr "Handrem"
+
+msgid "Shift up"
+msgstr "Opschakelen"
+
+msgid "Shift down"
+msgstr "Terugschakelen"
+
+msgid "Clutch"
+msgstr "Koppeling"
+
+msgid "Change camera"
+msgstr "Camera wisselen"
+
+msgid "Look back"
+msgstr "Achteruit kijken"
+
+msgid "Look left"
+msgstr "Naar links kijken"
+
+msgid "Look right"
+msgstr "Naar rechts kijken"
+
+msgid "Rewind"
+msgstr "Terugspoelen"
+
+msgid "Map"
+msgstr "Kaart"
+
+msgid "Photo mode"
+msgstr "Fotomodus"
+
+msgid "Previous station"
+msgstr "Vorige zender"
+
+msgid "Next station"
+msgstr "Volgende zender"
+
+msgid "Telemetry"
+msgstr "Telemetrie"
+
+msgid "Enter garage (prompts)"
+msgstr "Garage in (meldingen)"
+
+msgid "Nitro (FnFNitro)"
+msgstr "Nitro (FnFNitro)"
+
+msgid "Horn (HonkHonk)"
+msgstr "Claxon (HonkHonk)"
+
+msgid "Left indicator"
+msgstr "Richtingaanwijzer links"
+
+msgid "Right indicator"
+msgstr "Richtingaanwijzer rechts"
+
+msgid "Hazard lights"
+msgstr "Alarmlichten"
+
+msgid "Headlights"
+msgstr "Koplampen"
+
+msgid "ANNA: open / close"
+msgstr "ANNA: openen / sluiten"
+
+msgid "ANNA: up"
+msgstr "ANNA: omhoog"
+
+msgid "ANNA: down"
+msgstr "ANNA: omlaag"
+
+msgid "ANNA: back"
+msgstr "ANNA: terug"
+
+msgid "ANNA: choose"
+msgstr "ANNA: kiezen"
+
+msgid "ANNA: cinematic camera (autodrive)"
+msgstr "ANNA: filmische camera (automatisch rijden)"
+
+msgid "FH2 ANNA's key while its autodrive drives: turns the cinematic camera on and off, holding the controller button ANNA's ini gives it (LB). It does nothing otherwise, so it can be a driving key too."
+msgstr "Toets van FH2 ANNA tijdens automatisch rijden: zet de filmische camera aan en uit door de controllerknop uit ANNA's ini (LB) in te drukken. Verder doet hij niets, dus hij kan ook een rijtoets zijn."
+
+msgid "Drone: forward"
+msgstr "Drone: vooruit"
+
+msgid "Drone: back"
+msgstr "Drone: achteruit"
+
+msgid "Drone: left"
+msgstr "Drone: links"
+
+msgid "Drone: right"
+msgstr "Drone: rechts"
+
+msgid "Drone: up"
+msgstr "Drone: omhoog"
+
+msgid "Drone: down"
+msgstr "Drone: omlaag"
+
+msgid "Drone: faster"
+msgstr "Drone: sneller"
+
+msgid "Drone: back to the car"
+msgstr "Drone: terug naar de auto"
+
+msgid "Drone: look at the car"
+msgstr "Drone: naar de auto kijken"
+
+msgid "Drone: hide / show the help"
+msgstr "Drone: hulp verbergen / tonen"
+
+msgid "Drone: exit"
+msgstr "Drone: afsluiten"
+
+msgid "Pause"
+msgstr "Pauze"
+
+msgid "Menu: select"
+msgstr "Menu: selecteren"
+
+msgid "Menu: back"
+msgstr "Menu: terug"
+
+msgid "Menu: up"
+msgstr "Menu: omhoog"
+
+msgid "Menu: down"
+msgstr "Menu: omlaag"
+
+msgid "Menu: left"
+msgstr "Menu: links"
+
+msgid "Menu: right"
+msgstr "Menu: rechts"
+
+msgid "Menu: previous tab"
+msgstr "Menu: vorig tabblad"
+
+msgid "Menu: next tab"
+msgstr "Menu: volgend tabblad"
+
+msgid "Menu: X button"
+msgstr "Menu: X-knop"
+
+msgid "Menu: Y button"
+msgstr "Menu: Y-knop"
+
+msgid "Menu: View button"
+msgstr "Menu: Weergave-knop"
+
+msgid "Menu: left trigger"
+msgstr "Menu: linkertrekker"
+
+msgid "Menu: right trigger"
+msgstr "Menu: rechtertrekker"
+
+msgid "Menu: left stick click"
+msgstr "Menu: linkerstick indrukken"
+
+msgid "Menu: right stick click"
+msgstr "Menu: rechterstick indrukken"

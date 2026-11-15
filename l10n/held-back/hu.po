@@ -1,0 +1,255 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: FH2 Mouse & Keyboard\n"
+"Language: hu\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "KEYBOARD & MOUSE"
+msgstr "BILLENTYŰZET ÉS EGÉR"
+
+msgctxt "mod.description"
+msgid "Drive with the keyboard, point at things in the menus and click them, drag the map, turn the garage camera, place decals with the keyboard, and fly the photo mode camera, all without picking up a controller."
+msgstr "Vezess billentyűzettel, mutass rá és kattints a menükben, húzd a térképet, forgasd a garázs kameráját, helyezz el matricákat billentyűzettel, és irányítsd a fotómód kameráját, mindezt kontroller nélkül."
+
+msgid "Keyboard controls"
+msgstr "Billentyűzetes irányítás"
+
+msgid "Drive with the keyboard and move around the menus with it. The rows below set the keys."
+msgstr "Vezess billentyűzettel, és navigálj vele a menükben. Az alábbi sorok állítják be a billentyűket."
+
+msgid "Keyboard icons"
+msgstr "Billentyűzetikonok"
+
+msgid "While you play with the keyboard, the help bar shows its keys instead of the controller's buttons. A button on the controller brings the buttons back."
+msgstr "Amíg billentyűzettel játszol, a súgósáv a billentyűket mutatja a kontroller gombjai helyett. A kontroller egy gombja visszahozza a gombokat."
+
+msgid "Mouse hover selects"
+msgstr "Kijelölés rámutatással"
+
+msgid "Moving the mouse over a button, list row or slider selects it. Off, only a click does."
+msgstr "Ha az egeret egy gomb, listasor vagy csúszka fölé viszed, kijelöli. Kikapcsolva csak a kattintás jelöl ki."
+
+msgid "Mouse free look"
+msgstr "Szabad nézelődés egérrel"
+
+msgid "While driving, moving the mouse looks around. The cursor stays in the game's window: Alt+Tab to leave it."
+msgstr "Vezetés közben az egér mozgatásával körülnézhetsz. A kurzor a játék ablakában marad: Alt+Tab-bal hagyhatod el."
+
+msgid "Mouse free look sensitivity"
+msgstr "Egeres nézelődés érzékenysége"
+
+msgid "How far the camera turns for the mouse's movement while you look around. 50 is the usual, 100 twice as far, 0 not at all."
+msgstr "Mennyit fordul a kamera az egér mozgására körülnézés közben. 50 a szokásos, 100 a kétszerese, 0 egyáltalán nem."
+
+msgid "Keyboard preset"
+msgstr "Billentyűkiosztás"
+
+msgid "Sets every key below at once. WS drive, arrow steer is the mod's own layout; AZERTY and QWERTZ put the keys where WASD's are on those keyboards. Changing a key makes it Custom."
+msgstr "Egyszerre beállítja az összes alábbi billentyűt. A WS vezetés, nyilak kormányzás a mod saját kiosztása; az AZERTY és a QWERTZ oda teszi a billentyűket, ahol azokon a billentyűzeteken a WASD van. Egy billentyű módosításával Egyéni lesz."
+
+msgid "WASD drive"
+msgstr "WASD vezetés"
+
+msgid "WS drive, arrow steer"
+msgstr "WS vezetés, nyilak kormányzás"
+
+msgid "Arrow drive"
+msgstr "Vezetés nyilakkal"
+
+msgid "Custom"
+msgstr "Egyéni"
+
+msgid "FH2 ANNA's key while driving, pressing the controller's d-pad for it. The open key is ANNA's whenever you drive, the others only while ANNA's menu is open: a driving key on the same key waits till then."
+msgstr "Az FH2 ANNA billentyűje vezetés közben; helyette a kontroller iránygombjait nyomja. A megnyitó billentyű vezetés közben mindig az ANNA-é, a többi csak nyitott ANNA menü mellett: az ugyanarra a billentyűre tett vezetési művelet addig szünetel."
+
+msgid "ANNA Drone Mode's key while flying the drone. While it flies only its keys (and the radio's) count, so it can be a driving or menu key too."
+msgstr "Az ANNA Drone Mode billentyűje a drón repítése közben. Repülés közben csak az ő billentyűi (és a rádióé) számítanak, így vezetési vagy menübillentyű is lehet."
+
+msgid "The key for this in the menus. It does nothing while driving, so it can be a driving key too."
+msgstr "Ennek a billentyűje a menükben. Vezetés közben nem csinál semmit, így vezetési billentyű is lehet."
+
+msgid "The key for this while driving: Extra Options' own, pressed on the controller button its ini gives it. It does nothing in the menus, so it can be a menu key too."
+msgstr "Ennek a billentyűje vezetés közben: az Extra Options saját funkciója, a kontrollernek azt a gombját nyomja, amelyet az ini-je megad. A menükben nem csinál semmit, így menübillentyű is lehet."
+
+msgid "The key for this while driving. It does nothing in the menus, so it can be a menu key too."
+msgstr "Ennek a billentyűje vezetés közben. A menükben nem csinál semmit, így menübillentyű is lehet."
+
+msgid "Gas"
+msgstr "Gáz"
+
+msgid "Brake / reverse"
+msgstr "Fék / tolatás"
+
+msgid "Steer left"
+msgstr "Kormányzás balra"
+
+msgid "Steer right"
+msgstr "Kormányzás jobbra"
+
+msgid "Handbrake"
+msgstr "Kézifék"
+
+msgid "Shift up"
+msgstr "Felváltás"
+
+msgid "Shift down"
+msgstr "Visszaváltás"
+
+msgid "Clutch"
+msgstr "Kuplung"
+
+msgid "Change camera"
+msgstr "Kameraváltás"
+
+msgid "Look back"
+msgstr "Hátranézés"
+
+msgid "Look left"
+msgstr "Balra nézés"
+
+msgid "Look right"
+msgstr "Jobbra nézés"
+
+msgid "Rewind"
+msgstr "Visszatekerés"
+
+msgid "Map"
+msgstr "Térkép"
+
+msgid "Photo mode"
+msgstr "Fotómód"
+
+msgid "Previous station"
+msgstr "Előző állomás"
+
+msgid "Next station"
+msgstr "Következő állomás"
+
+msgid "Telemetry"
+msgstr "Telemetria"
+
+msgid "Enter garage (prompts)"
+msgstr "Belépés a garázsba (felszólítások)"
+
+msgid "Nitro (FnFNitro)"
+msgstr "Nitro (FnFNitro)"
+
+msgid "Horn (HonkHonk)"
+msgstr "Duda (HonkHonk)"
+
+msgid "Left indicator"
+msgstr "Bal index"
+
+msgid "Right indicator"
+msgstr "Jobb index"
+
+msgid "Hazard lights"
+msgstr "Vészvillogó"
+
+msgid "Headlights"
+msgstr "Fényszórók"
+
+msgid "ANNA: open / close"
+msgstr "ANNA: megnyitás / bezárás"
+
+msgid "ANNA: up"
+msgstr "ANNA: fel"
+
+msgid "ANNA: down"
+msgstr "ANNA: le"
+
+msgid "ANNA: back"
+msgstr "ANNA: vissza"
+
+msgid "ANNA: choose"
+msgstr "ANNA: kiválasztás"
+
+msgid "ANNA: cinematic camera (autodrive)"
+msgstr "ANNA: filmes kamera (robotpilóta)"
+
+msgid "FH2 ANNA's key while its autodrive drives: turns the cinematic camera on and off, holding the controller button ANNA's ini gives it (LB). It does nothing otherwise, so it can be a driving key too."
+msgstr "Az FH2 ANNA billentyűje robotpilóta közben: az ANNA ini-jében megadott kontrollergomb (LB) nyomásával be- és kikapcsolja a filmes kamerát. Máskor nem csinál semmit, így vezetési billentyű is lehet."
+
+msgid "Drone: forward"
+msgstr "Drón: előre"
+
+msgid "Drone: back"
+msgstr "Drón: hátra"
+
+msgid "Drone: left"
+msgstr "Drón: balra"
+
+msgid "Drone: right"
+msgstr "Drón: jobbra"
+
+msgid "Drone: up"
+msgstr "Drón: fel"
+
+msgid "Drone: down"
+msgstr "Drón: le"
+
+msgid "Drone: faster"
+msgstr "Drón: gyorsabban"
+
+msgid "Drone: back to the car"
+msgstr "Drón: vissza az autóhoz"
+
+msgid "Drone: look at the car"
+msgstr "Drón: az autó felé néz"
+
+msgid "Drone: hide / show the help"
+msgstr "Drón: súgó elrejtése / megjelenítése"
+
+msgid "Drone: exit"
+msgstr "Drón: kilépés"
+
+msgid "Pause"
+msgstr "Szünet"
+
+msgid "Menu: select"
+msgstr "Menü: kiválasztás"
+
+msgid "Menu: back"
+msgstr "Menü: vissza"
+
+msgid "Menu: up"
+msgstr "Menü: fel"
+
+msgid "Menu: down"
+msgstr "Menü: le"
+
+msgid "Menu: left"
+msgstr "Menü: balra"
+
+msgid "Menu: right"
+msgstr "Menü: jobbra"
+
+msgid "Menu: previous tab"
+msgstr "Menü: előző fül"
+
+msgid "Menu: next tab"
+msgstr "Menü: következő fül"
+
+msgid "Menu: X button"
+msgstr "Menü: X gomb"
+
+msgid "Menu: Y button"
+msgstr "Menü: Y gomb"
+
+msgid "Menu: View button"
+msgstr "Menü: Nézet gomb"
+
+msgid "Menu: left trigger"
+msgstr "Menü: bal ravasz"
+
+msgid "Menu: right trigger"
+msgstr "Menü: jobb ravasz"
+
+msgid "Menu: left stick click"
+msgstr "Menü: bal kar lenyomása"
+
+msgid "Menu: right stick click"
+msgstr "Menü: jobb kar lenyomása"

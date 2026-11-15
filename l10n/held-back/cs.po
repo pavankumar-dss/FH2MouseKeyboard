@@ -1,0 +1,255 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: FH2 Mouse & Keyboard\n"
+"Language: cs\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n==1) ? 0 : (n>=2 && n<=4) ? 1 : 2;\n"
+
+msgid "KEYBOARD & MOUSE"
+msgstr "KLÁVESNICE A MYŠ"
+
+msgctxt "mod.description"
+msgid "Drive with the keyboard, point at things in the menus and click them, drag the map, turn the garage camera, place decals with the keyboard, and fly the photo mode camera, all without picking up a controller."
+msgstr "Řiďte klávesnicí, ukazujte a klikejte v nabídkách, přetahujte mapu, otáčejte kamerou v garáži, umisťujte polepy klávesnicí a létejte kamerou fotorežimu, to vše bez ovladače."
+
+msgid "Keyboard controls"
+msgstr "Ovládání klávesnicí"
+
+msgid "Drive with the keyboard and move around the menus with it. The rows below set the keys."
+msgstr "Řiďte klávesnicí a pohybujte se jí i v nabídkách. Řádky níže nastavují klávesy."
+
+msgid "Keyboard icons"
+msgstr "Ikony klávesnice"
+
+msgid "While you play with the keyboard, the help bar shows its keys instead of the controller's buttons. A button on the controller brings the buttons back."
+msgstr "Když hrajete na klávesnici, panel nápovědy ukazuje její klávesy místo tlačítek ovladače. Stisk tlačítka na ovladači vrátí tlačítka."
+
+msgid "Mouse hover selects"
+msgstr "Výběr najetím myši"
+
+msgid "Moving the mouse over a button, list row or slider selects it. Off, only a click does."
+msgstr "Najetí myší na tlačítko, řádek seznamu nebo posuvník jej vybere. Při vypnutí vybírá jen kliknutí."
+
+msgid "Mouse free look"
+msgstr "Volný pohled myší"
+
+msgid "While driving, moving the mouse looks around. The cursor stays in the game's window: Alt+Tab to leave it."
+msgstr "Při jízdě se pohybem myši rozhlížíte. Kurzor zůstává v okně hry: opustíte ho klávesami Alt+Tab."
+
+msgid "Mouse free look sensitivity"
+msgstr "Citlivost volného pohledu"
+
+msgid "How far the camera turns for the mouse's movement while you look around. 50 is the usual, 100 twice as far, 0 not at all."
+msgstr "Jak moc se kamera při rozhlížení otočí podle pohybu myši. 50 je obvyklé, 100 dvojnásobek, 0 vůbec."
+
+msgid "Keyboard preset"
+msgstr "Předvolba klávesnice"
+
+msgid "Sets every key below at once. WS drive, arrow steer is the mod's own layout; AZERTY and QWERTZ put the keys where WASD's are on those keyboards. Changing a key makes it Custom."
+msgstr "Nastaví najednou všechny klávesy níže. WS jízda, šipky řízení je vlastní rozložení modu; AZERTY a QWERTZ dávají klávesy tam, kde je na těchto klávesnicích WASD. Změnou klávesy se nastaví Vlastní."
+
+msgid "WASD drive"
+msgstr "Jízda WASD"
+
+msgid "WS drive, arrow steer"
+msgstr "WS jízda, šipky řízení"
+
+msgid "Arrow drive"
+msgstr "Jízda šipkami"
+
+msgid "Custom"
+msgstr "Vlastní"
+
+msgid "FH2 ANNA's key while driving, pressing the controller's d-pad for it. The open key is ANNA's whenever you drive, the others only while ANNA's menu is open: a driving key on the same key waits till then."
+msgstr "Klávesa FH2 ANNA při jízdě; mačká za ni směrový ovladač. Klávesa otevření patří ANNA vždy při jízdě, ostatní jen při otevřené nabídce ANNA: jízdní akce na stejné klávese mezitím čeká."
+
+msgid "ANNA Drone Mode's key while flying the drone. While it flies only its keys (and the radio's) count, so it can be a driving or menu key too."
+msgstr "Klávesa ANNA Drone Mode při létání s dronem. Za letu platí jen jeho klávesy (a klávesy rádia), takže může být i jízdní nebo nabídkovou klávesou."
+
+msgid "The key for this in the menus. It does nothing while driving, so it can be a driving key too."
+msgstr "Klávesa pro tuto akci v nabídkách. Při jízdě nic nedělá, takže může být i jízdní klávesou."
+
+msgid "The key for this while driving: Extra Options' own, pressed on the controller button its ini gives it. It does nothing in the menus, so it can be a menu key too."
+msgstr "Klávesa pro tuto akci při jízdě: vlastní funkce Extra Options, stiskne tlačítko ovladače, které jí dává její ini. V nabídkách nic nedělá, takže může být i klávesou nabídek."
+
+msgid "The key for this while driving. It does nothing in the menus, so it can be a menu key too."
+msgstr "Klávesa pro tuto akci při jízdě. V nabídkách nic nedělá, takže může být i klávesou nabídek."
+
+msgid "Gas"
+msgstr "Plyn"
+
+msgid "Brake / reverse"
+msgstr "Brzda / couvání"
+
+msgid "Steer left"
+msgstr "Zatočit vlevo"
+
+msgid "Steer right"
+msgstr "Zatočit vpravo"
+
+msgid "Handbrake"
+msgstr "Ruční brzda"
+
+msgid "Shift up"
+msgstr "Řadit nahoru"
+
+msgid "Shift down"
+msgstr "Řadit dolů"
+
+msgid "Clutch"
+msgstr "Spojka"
+
+msgid "Change camera"
+msgstr "Změnit kameru"
+
+msgid "Look back"
+msgstr "Pohled dozadu"
+
+msgid "Look left"
+msgstr "Pohled doleva"
+
+msgid "Look right"
+msgstr "Pohled doprava"
+
+msgid "Rewind"
+msgstr "Přetočit"
+
+msgid "Map"
+msgstr "Mapa"
+
+msgid "Photo mode"
+msgstr "Fotorežim"
+
+msgid "Previous station"
+msgstr "Předchozí stanice"
+
+msgid "Next station"
+msgstr "Další stanice"
+
+msgid "Telemetry"
+msgstr "Telemetrie"
+
+msgid "Enter garage (prompts)"
+msgstr "Vjet do garáže (výzvy)"
+
+msgid "Nitro (FnFNitro)"
+msgstr "Nitro (FnFNitro)"
+
+msgid "Horn (HonkHonk)"
+msgstr "Klakson (HonkHonk)"
+
+msgid "Left indicator"
+msgstr "Levý blinkr"
+
+msgid "Right indicator"
+msgstr "Pravý blinkr"
+
+msgid "Hazard lights"
+msgstr "Výstražná světla"
+
+msgid "Headlights"
+msgstr "Světlomety"
+
+msgid "ANNA: open / close"
+msgstr "ANNA: otevřít / zavřít"
+
+msgid "ANNA: up"
+msgstr "ANNA: nahoru"
+
+msgid "ANNA: down"
+msgstr "ANNA: dolů"
+
+msgid "ANNA: back"
+msgstr "ANNA: zpět"
+
+msgid "ANNA: choose"
+msgstr "ANNA: vybrat"
+
+msgid "ANNA: cinematic camera (autodrive)"
+msgstr "ANNA: filmová kamera (autopilot)"
+
+msgid "FH2 ANNA's key while its autodrive drives: turns the cinematic camera on and off, holding the controller button ANNA's ini gives it (LB). It does nothing otherwise, so it can be a driving key too."
+msgstr "Klávesa FH2 ANNA během autopilota: zapíná a vypíná filmovou kameru podržením tlačítka ovladače z ini ANNA (LB). Jinak nedělá nic, takže může být i klávesou pro řízení."
+
+msgid "Drone: forward"
+msgstr "Dron: vpřed"
+
+msgid "Drone: back"
+msgstr "Dron: vzad"
+
+msgid "Drone: left"
+msgstr "Dron: vlevo"
+
+msgid "Drone: right"
+msgstr "Dron: vpravo"
+
+msgid "Drone: up"
+msgstr "Dron: nahoru"
+
+msgid "Drone: down"
+msgstr "Dron: dolů"
+
+msgid "Drone: faster"
+msgstr "Dron: rychleji"
+
+msgid "Drone: back to the car"
+msgstr "Dron: zpět k autu"
+
+msgid "Drone: look at the car"
+msgstr "Dron: dívat se na auto"
+
+msgid "Drone: hide / show the help"
+msgstr "Dron: skrýt / zobrazit nápovědu"
+
+msgid "Drone: exit"
+msgstr "Dron: ukončit"
+
+msgid "Pause"
+msgstr "Pauza"
+
+msgid "Menu: select"
+msgstr "Nabídka: vybrat"
+
+msgid "Menu: back"
+msgstr "Nabídka: zpět"
+
+msgid "Menu: up"
+msgstr "Nabídka: nahoru"
+
+msgid "Menu: down"
+msgstr "Nabídka: dolů"
+
+msgid "Menu: left"
+msgstr "Nabídka: doleva"
+
+msgid "Menu: right"
+msgstr "Nabídka: doprava"
+
+msgid "Menu: previous tab"
+msgstr "Nabídka: předchozí karta"
+
+msgid "Menu: next tab"
+msgstr "Nabídka: další karta"
+
+msgid "Menu: X button"
+msgstr "Nabídka: tlačítko X"
+
+msgid "Menu: Y button"
+msgstr "Nabídka: tlačítko Y"
+
+msgid "Menu: View button"
+msgstr "Nabídka: tlačítko Zobrazit"
+
+msgid "Menu: left trigger"
+msgstr "Nabídka: levá spoušť"
+
+msgid "Menu: right trigger"
+msgstr "Nabídka: pravá spoušť"
+
+msgid "Menu: left stick click"
+msgstr "Nabídka: stisk levé páčky"
+
+msgid "Menu: right stick click"
+msgstr "Nabídka: stisk pravé páčky"

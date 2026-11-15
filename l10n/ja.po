@@ -1,0 +1,255 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: FH2 Mouse & Keyboard\n"
+"Language: ja\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "KEYBOARD & MOUSE"
+msgstr "キー＆マウス"
+
+msgctxt "mod.description"
+msgid "Drive with the keyboard, point at things in the menus and click them, drag the map, turn the garage camera, place decals with the keyboard, and fly the photo mode camera, all without picking up a controller."
+msgstr "キーボードで運転し、メニューはマウスで指してクリック、マップのドラッグ、ガレージのカメラの回転、キーボードでのデカール配置、フォトモードのカメラ操作まで、コントローラーなしでできます。"
+
+msgid "Keyboard controls"
+msgstr "キーボード操作"
+
+msgid "Drive with the keyboard and move around the menus with it. The rows below set the keys."
+msgstr "キーボードで運転し、メニューも操作します。下の項目でキーを設定します。"
+
+msgid "Keyboard icons"
+msgstr "キーボードのアイコン"
+
+msgid "While you play with the keyboard, the help bar shows its keys instead of the controller's buttons. A button on the controller brings the buttons back."
+msgstr "キーボードでプレイ中は、ヘルプバーにコントローラーのボタンの代わりにキーを表示します。コントローラーのボタンを押すと元に戻ります。"
+
+msgid "Mouse hover selects"
+msgstr "マウスオーバーで選択"
+
+msgid "Moving the mouse over a button, list row or slider selects it. Off, only a click does."
+msgstr "ボタン、リストの行、スライダーにマウスを重ねると選択します。オフにするとクリックでのみ選択します。"
+
+msgid "Mouse free look"
+msgstr "マウスで視点操作"
+
+msgid "While driving, moving the mouse looks around. The cursor stays in the game's window: Alt+Tab to leave it."
+msgstr "運転中、マウスを動かすと周りを見渡せます。カーソルはゲームのウィンドウ内にとどまります。離れるには Alt+Tab を押します。"
+
+msgid "Mouse free look sensitivity"
+msgstr "マウス視点操作の感度"
+
+msgid "How far the camera turns for the mouse's movement while you look around. 50 is the usual, 100 twice as far, 0 not at all."
+msgstr "見渡すときに、マウスの動きに対してカメラがどれだけ回るかです。50 が標準、100 で 2 倍、0 で回りません。"
+
+msgid "Keyboard preset"
+msgstr "キー配置のプリセット"
+
+msgid "Sets every key below at once. WS drive, arrow steer is the mod's own layout; AZERTY and QWERTZ put the keys where WASD's are on those keyboards. Changing a key makes it Custom."
+msgstr "下のキーをまとめて設定します。「WSで運転、方向キーでハンドル」はこのMOD独自の配置です。AZERTY と QWERTZ は、それらのキーボードで WASD の位置にキーを割り当てます。キーを変更するとカスタムになります。"
+
+msgid "WASD drive"
+msgstr "WASDで運転"
+
+msgid "WS drive, arrow steer"
+msgstr "WSで運転、方向キーでハンドル"
+
+msgid "Arrow drive"
+msgstr "方向キーで運転"
+
+msgid "Custom"
+msgstr "カスタム"
+
+msgid "FH2 ANNA's key while driving, pressing the controller's d-pad for it. The open key is ANNA's whenever you drive, the others only while ANNA's menu is open: a driving key on the same key waits till then."
+msgstr "運転中の FH2 ANNA のキーで、代わりにコントローラーの十字キーを押します。開くキーは運転中いつでも ANNA のもの、その他は ANNA のメニューが開いている間だけです。同じキーの運転操作はその間は働きません。"
+
+msgid "ANNA Drone Mode's key while flying the drone. While it flies only its keys (and the radio's) count, so it can be a driving or menu key too."
+msgstr "ANNA Drone Mode でドローンを飛ばしている間のキー。飛行中はそのキー (とラジオのキー) だけが働くので、運転やメニューのキーと同じでもかまいません。"
+
+msgid "The key for this in the menus. It does nothing while driving, so it can be a driving key too."
+msgstr "メニューでのこの操作のキーです。運転中は何もしないので、運転用のキーと同じでもかまいません。"
+
+msgid "The key for this while driving: Extra Options' own, pressed on the controller button its ini gives it. It does nothing in the menus, so it can be a menu key too."
+msgstr "運転中のこの操作のキーです。Extra Options 自身の操作で、その ini が割り当てたコントローラーのボタンを押します。メニューでは何もしないので、メニュー用のキーと同じでもかまいません。"
+
+msgid "The key for this while driving. It does nothing in the menus, so it can be a menu key too."
+msgstr "運転中のこの操作のキーです。メニューでは何もしないので、メニュー用のキーと同じでもかまいません。"
+
+msgid "Gas"
+msgstr "アクセル"
+
+msgid "Brake / reverse"
+msgstr "ブレーキ / バック"
+
+msgid "Steer left"
+msgstr "左にハンドル"
+
+msgid "Steer right"
+msgstr "右にハンドル"
+
+msgid "Handbrake"
+msgstr "サイドブレーキ"
+
+msgid "Shift up"
+msgstr "シフトアップ"
+
+msgid "Shift down"
+msgstr "シフトダウン"
+
+msgid "Clutch"
+msgstr "クラッチ"
+
+msgid "Change camera"
+msgstr "カメラ切り替え"
+
+msgid "Look back"
+msgstr "後方を見る"
+
+msgid "Look left"
+msgstr "左を見る"
+
+msgid "Look right"
+msgstr "右を見る"
+
+msgid "Rewind"
+msgstr "巻き戻し"
+
+msgid "Map"
+msgstr "マップ"
+
+msgid "Photo mode"
+msgstr "フォトモード"
+
+msgid "Previous station"
+msgstr "前の局"
+
+msgid "Next station"
+msgstr "次の局"
+
+msgid "Telemetry"
+msgstr "テレメトリー"
+
+msgid "Enter garage (prompts)"
+msgstr "ガレージに入る (案内)"
+
+msgid "Nitro (FnFNitro)"
+msgstr "ニトロ (FnFNitro)"
+
+msgid "Horn (HonkHonk)"
+msgstr "クラクション (HonkHonk)"
+
+msgid "Left indicator"
+msgstr "左ウインカー"
+
+msgid "Right indicator"
+msgstr "右ウインカー"
+
+msgid "Hazard lights"
+msgstr "ハザードランプ"
+
+msgid "Headlights"
+msgstr "ヘッドライト"
+
+msgid "ANNA: open / close"
+msgstr "ANNA: 開く / 閉じる"
+
+msgid "ANNA: up"
+msgstr "ANNA: 上"
+
+msgid "ANNA: down"
+msgstr "ANNA: 下"
+
+msgid "ANNA: back"
+msgstr "ANNA: 戻る"
+
+msgid "ANNA: choose"
+msgstr "ANNA: 決定"
+
+msgid "ANNA: cinematic camera (autodrive)"
+msgstr "ANNA: シネマカメラ（自動運転）"
+
+msgid "FH2 ANNA's key while its autodrive drives: turns the cinematic camera on and off, holding the controller button ANNA's ini gives it (LB). It does nothing otherwise, so it can be a driving key too."
+msgstr "FH2 ANNAの自動運転中のキー: ANNAのiniで指定したコントローラーのボタン（LB）を押してシネマカメラをオン／オフします。それ以外では何もしないので、運転用のキーと兼用できます。"
+
+msgid "Drone: forward"
+msgstr "ドローン: 前進"
+
+msgid "Drone: back"
+msgstr "ドローン: 後退"
+
+msgid "Drone: left"
+msgstr "ドローン: 左"
+
+msgid "Drone: right"
+msgstr "ドローン: 右"
+
+msgid "Drone: up"
+msgstr "ドローン: 上昇"
+
+msgid "Drone: down"
+msgstr "ドローン: 下降"
+
+msgid "Drone: faster"
+msgstr "ドローン: 高速"
+
+msgid "Drone: back to the car"
+msgstr "ドローン: 車に戻る"
+
+msgid "Drone: look at the car"
+msgstr "ドローン: 車を見る"
+
+msgid "Drone: hide / show the help"
+msgstr "ドローン: ヘルプの非表示 / 表示"
+
+msgid "Drone: exit"
+msgstr "ドローン: 終了"
+
+msgid "Pause"
+msgstr "ポーズ"
+
+msgid "Menu: select"
+msgstr "メニュー: 決定"
+
+msgid "Menu: back"
+msgstr "メニュー: 戻る"
+
+msgid "Menu: up"
+msgstr "メニュー: 上"
+
+msgid "Menu: down"
+msgstr "メニュー: 下"
+
+msgid "Menu: left"
+msgstr "メニュー: 左"
+
+msgid "Menu: right"
+msgstr "メニュー: 右"
+
+msgid "Menu: previous tab"
+msgstr "メニュー: 前のタブ"
+
+msgid "Menu: next tab"
+msgstr "メニュー: 次のタブ"
+
+msgid "Menu: X button"
+msgstr "メニュー: Xボタン"
+
+msgid "Menu: Y button"
+msgstr "メニュー: Yボタン"
+
+msgid "Menu: View button"
+msgstr "メニュー: ビューボタン"
+
+msgid "Menu: left trigger"
+msgstr "メニュー: 左トリガー"
+
+msgid "Menu: right trigger"
+msgstr "メニュー: 右トリガー"
+
+msgid "Menu: left stick click"
+msgstr "メニュー: 左スティック押し込み"
+
+msgid "Menu: right stick click"
+msgstr "メニュー: 右スティック押し込み"

@@ -459,7 +459,7 @@ const char* const kKeyChoices[] = {
 };
 constexpr std::size_t kMaxChoices = 32;
 std::array<std::vector<std::string>, kActionCount> g_row_choices;   // what each row offers
-std::vector<std::pair<std::string, std::string>> g_row_names;       // our rows: label (as the XAML has it), key
+std::vector<std::pair<std::string, std::string>> g_row_names;       // our rows: label (its English), key
 
 // Text for the pages' XAML (as the platform escapes our labels).
 std::string xml_escape(const std::string& s) {
@@ -595,7 +595,7 @@ void keyboard_row_changed(void*, const char* key, int value) {
 void add_keyboard_rows() {
     if (g_api->api_version < 9) return;
     auto add_row = [](const FH2Setting& s) {
-        if (g_api->add_setting(g_mod, &s)) g_row_names.emplace_back(xml_escape(s.label), s.key);   // as the page has it
+        if (g_api->add_setting(g_mod, &s)) g_row_names.emplace_back(lang::english(s.label), s.key);
     };
     FH2Setting on{};
     on.size        = sizeof on;
@@ -658,7 +658,7 @@ void add_keyboard_rows() {
     preset.value        = g_preset;
     preset.on_change    = keyboard_row_changed;
     add_row(preset);
-    static std::string keys[kActionCount], labels[kActionCount];
+    static std::string keys[kActionCount];
     const bool nitro = GetFileAttributesW((std::wstring(g_api->azimuth_dir) + L"\\fh2-mods\\FnFNitro.dll").c_str()) !=
                        INVALID_FILE_ATTRIBUTES;
     const bool horn = GetFileAttributesW((std::wstring(g_api->azimuth_dir) + L"\\fh2-mods\\HonkHonk.dll").c_str()) !=
@@ -687,12 +687,11 @@ void add_keyboard_rows() {
         const int value = row_value(i);
         std::vector<const char*> names;
         for (const std::string& c : choices) names.push_back(c.c_str());
-        keys[i]   = std::string("Key_") + a.name;
-        labels[i] = lang::tr(a.label);
+        keys[i] = std::string("Key_") + a.name;
         FH2Setting s{};
         s.size         = sizeof s;
         s.key          = keys[i].c_str();
-        s.label        = labels[i].c_str();
+        s.label        = lang::tr(a.label);   // tr()'s own text, as it is: it follows the game's language
         s.description  = lang::tr(is_drone_action(a.name)
                              ? "ANNA Drone Mode's key while flying the drone. While it flies only its keys (and the radio's) count, so it can be a driving or menu key too."
                          : !std::strcmp(a.name, "AnnaCinematic")
@@ -4109,7 +4108,7 @@ void hook_horn() {
 
 // ---- Pause > Settings > Keyboard & Mouse ---------------------------------------------------------
 // The keys' rows (and the mouse's) get a tile of their own on the Settings page, next to Controls,
-// instead of being among every mod's rows on the platform's MODS page.
+// as well as on the mod's own page under MODS > YOUR MODS.
 //
 // - The pages' XAML is edited as the game reads it, as Extra Options edits the pages it changes:
 //   the page loader (0x16EBB37) gets the file's bytes with 0xAABEC0(reader, Ptr* out), a resource
@@ -4122,9 +4121,9 @@ void hook_horn() {
 //   tiles, with 0xD9FC10(page, "PART_Button_X", &pmf)), and opens the page as the MODS tile does:
 //   it runs the HUD tile's handler (0xDC6C40), and the HUD page's scene record (0xB3A3E0, built
 //   twice) is pointed at the platform's Mods page, A_ModOptions.
-// - That page, read just after our tile was pressed, keeps only this mod's rows (the platform
-//   writes " (FH2 Mouse & Keyboard)" at the end of their descriptions) and gets our title; read at
-//   any other time, it loses them. Its rows are bound to the platform's properties, so a change
+// - That page, read just after our tile was pressed, keeps only this mod's rows (those under the
+//   heading with our name) and gets our title. Read at any other time it's left alone: the rows are
+//   on our page under MODS > YOUR MODS too. Its rows are bound to the platform's properties, so a change
 //   comes to keyboard_row_changed as before.
 constexpr uintptr_t RVA_GET_RESOURCE      = 0x0AABEC0;   // Ptr* (reader, Ptr* out): the reader's data, add-ref'd
 constexpr uintptr_t RVA_PAGE_XAML_RETURN  = 0x16EBB3C;   // after the page loader's call to it
@@ -4138,7 +4137,6 @@ constexpr uintptr_t RVA_HUD_TILE          = 0x0DC6C40;   // PauseOptionsMenu::On
 constexpr uintptr_t RVA_HUD_SCENE_RECORD  = 0x0B3A3E0;   // SceneRecord* build(SceneRecord* out)
 
 constexpr char kModName[]    = "FH2 Mouse & Keyboard";
-constexpr char kOurSuffix[]  = " (FH2 Mouse &amp; Keyboard)\"";   // the end of our rows' descriptions
 // The tile's title, in the game's language now. The Settings page's XAML isn't read as UTF-8
 // (the platform's Mods page is), so what isn't ASCII goes as character references (&#x9375;).
 std::string tile_title() {
@@ -4430,35 +4428,39 @@ void find_descriptors() {
              static_cast<int>(g_open_props.size()));
 }
 
-// The Mods page (A_ModOptions.xaml, "ALL SETTINGS"): only our rows (`ours`), or all but them.
-bool filter_mods_page(std::string& page, bool ours) {
+// The Mods page (A_ModOptions.xaml, the list that stands in for the MODS tab, platform 2.9.0): a
+// heading row for each mod (FH2Mod_InfoRow_Heading, its name in BindingProxy.A), then its rows, its
+// Pop-ups and Load switches. Ours keeps only our rows, from under our heading, and gets our title.
+// Its rows are bound to the platform's properties, so a change comes to keyboard_row_changed as before.
+bool filter_mods_page(std::string& page) {
     const std::string list_at = "<local:CommonListBox x:Name=\"OptionsList\"", list_end = "</local:CommonListBox>";
     const std::string item = "<local:TileMenuDataItem x:Key=\"FH2Mod_Item_", tag = "Tag=\"{StaticResource FH2Mod_Item_";
-    const std::string first = " x:Name=\"FirstItem\"";
-    if (page.find("Content=\"ALL SETTINGS\"") == std::string::npos) return false;
-    // our rows, by number
+    const std::string heading_row = "Template=\"{StaticResource FH2Mod_InfoRow_Heading}\"";
+    const std::string ours_heading = "local:BindingProxy.A=\"" + xml_escape(kModName) + "\"";
+    const std::string first = " x:Name=\"FirstItem\"", bound = "{Binding FH2Mod_";
+    const std::string title = "Content=\"MODS\"", selected = " SelectedIndex=\"{Binding FH2Mod_Selected, Mode=TwoWay}\"";
+    if (page.find(title) == std::string::npos) return false;
+    // the items that are rows of ours, by number: their label (as the page has it) is one of ours
+    std::vector<std::string> labels;
+    for (const auto& [en, key] : g_row_names) labels.push_back(xml_escape(lang::tr(en.c_str())));
     std::vector<std::string> mine;
-    std::vector<std::pair<std::string, std::string>> props;   // our rows' keys and properties
     for (std::size_t p = page.find(item); p != std::string::npos; p = page.find(item, p + 1)) {
         const std::size_t n = p + item.size(), q = page.find('"', n), e = page.find("/>", n);
         if (q == std::string::npos || e == std::string::npos) return false;
         const std::string el = page.substr(n, e - n);
-        if (el.find(kOurSuffix) == std::string::npos) continue;
-        mine.push_back(page.substr(n, q - n));
         const std::size_t h = el.find("Heading=\""), he = h == std::string::npos ? h : el.find('"', h + 9);
         if (he == std::string::npos) continue;
         const std::string heading = el.substr(h + 9, he - h - 9);
-        for (const auto& [label, key] : g_row_names)
-            if (label == heading) props.emplace_back(key, "FH2Mod_" + mine.back());
+        if (std::find(labels.begin(), labels.end(), heading) != labels.end()) mine.push_back(page.substr(n, q - n));
     }
-    if (mine.empty()) return false;
     std::size_t l = page.find(list_at);
     l = l == std::string::npos ? l : page.find('>', l);
     const std::size_t le = l == std::string::npos ? l : page.find(list_end, l);
-    if (le == std::string::npos) return false;
+    if (mine.empty() || le == std::string::npos) return false;
     std::string kept;
+    std::vector<std::pair<std::string, std::string>> props;   // our rows' keys and properties
     int rows = 0;
-    bool any_other = false;
+    bool in_ours = false;
     std::size_t p = l + 1;
     while (p < le) {
         std::size_t e = page.find('\n', p);
@@ -4466,72 +4468,41 @@ bool filter_mods_page(std::string& page, bool ours) {
         std::string line = page.substr(p, e - p);
         p = e;
         const std::size_t t = line.find(tag);
-        if (t != std::string::npos) {
-            const std::size_t n = t + tag.size(), q = line.find('}', n);
-            if (q == std::string::npos) return false;
-            const bool is_mine = std::find(mine.begin(), mine.end(), line.substr(n, q - n)) != mine.end();
-            any_other = any_other || !is_mine;
-            if (is_mine != ours) continue;
-            while (replace_once(line, first, "")) {}
-            if (rows++ == 0) {   // the page's first row is named FirstItem
-                const std::size_t close = line.rfind("/>");
-                if (close == std::string::npos) return false;
-                line.insert(close, first.substr(1) + " ");
-            }
+        if (t == std::string::npos) {
+            kept += line;
+            continue;
+        }
+        if (line.find(heading_row) != std::string::npos) {   // a mod's heading: ours or another's
+            in_ours = line.find(ours_heading) != std::string::npos;
+            continue;
+        }
+        const std::size_t n = t + tag.size(), q = line.find('}', n);
+        if (q == std::string::npos) return false;
+        if (!in_ours || std::find(mine.begin(), mine.end(), line.substr(n, q - n)) == mine.end()) continue;
+        // its property, for find_descriptors: {Binding FH2Mod_<n>}
+        const std::size_t b = line.find(bound), be = b == std::string::npos ? b : line.find('}', b);
+        const std::size_t h = page.find(item + line.substr(n, q - n) + "\"");
+        if (be != std::string::npos && h != std::string::npos) {
+            const std::size_t hs = page.find("Heading=\"", h), he = hs == std::string::npos ? hs : page.find('"', hs + 9);
+            const std::string heading = he == std::string::npos ? std::string() : page.substr(hs + 9, he - hs - 9);
+            for (std::size_t k = 0; k < labels.size(); ++k)
+                if (labels[k] == heading) props.emplace_back(g_row_names[k].second, line.substr(b + 9, be - b - 9));
+        }
+        while (replace_once(line, first, "")) {}
+        if (rows++ == 0) {   // the page's first row is named FirstItem
+            const std::size_t close = line.rfind("/>");
+            if (close == std::string::npos) return false;
+            line.insert(close, first.substr(1) + " ");
         }
         kept += line;
     }
-    if (!rows || (!ours && !any_other)) return false;
+    if (!rows) return false;
     page.replace(l + 1, le - (l + 1), kept);
-    if (ours) {
-        g_open_props = props;
-        replace_once(page, "Content=\"ALL SETTINGS\"", "Content=\"" + tile_title() + "\"");
-        while (replace_once(page, kOurSuffix, "\"")) {}   // the descriptions needn't say whose they are
-    }
+    // The platform follows the stand-in list's selection by its place in the list, which isn't ours.
+    replace_once(page, selected, "");
+    g_open_props = props;
+    replace_once(page, title, "Content=\"" + tile_title() + "\"");
     return true;
-}
-
-// MODS > Installed mods ("INSTALLED MODS"): each mod's view is a list of its rows; ours lose
-// theirs, as they're on their own page. The platform finds what A does on a row by its place
-// in the list, so ours go only from the end of a list (they're last in our mod's).
-bool filter_installed_page(std::string& page) {
-    const std::string item = "<local:TileMenuDataItem x:Key=\"", tag = "Tag=\"{StaticResource ";
-    const std::string list_at = "<local:CommonListBox", list_end = "</local:CommonListBox>";
-    if (page.find("Content=\"INSTALLED MODS\"") == std::string::npos) return false;
-    std::vector<std::string> mine;   // our rows' items, by key
-    for (std::size_t p = page.find(item); p != std::string::npos; p = page.find(item, p + 1)) {
-        const std::size_t n = p + item.size(), q = page.find('"', n), e = page.find("/>", n);
-        if (q == std::string::npos || e == std::string::npos) return false;
-        if (page.substr(n, e - n).find(kOurSuffix) != std::string::npos) mine.push_back(page.substr(n, q - n));
-    }
-    if (mine.empty()) return false;
-    bool changed = false;
-    for (std::size_t l = page.find(list_at); l != std::string::npos; l = page.find(list_at, l + 1)) {
-        const std::size_t open = page.find('>', l), le = open == std::string::npos ? open : page.find(list_end, open);
-        if (le == std::string::npos) return false;
-        // the rows, each a line: from the end, ours while there are any
-        std::size_t cut = le, p = le;
-        while (p > open + 1) {
-            const std::size_t start = page.rfind('\n', p - 2) + 1;
-            const std::string line  = page.substr(start, p - start);
-            const std::size_t t     = line.find(tag);
-            if (t != std::string::npos) {
-                const std::size_t n = t + tag.size(), q = line.find('}', n);
-                if (q == std::string::npos || std::find(mine.begin(), mine.end(), line.substr(n, q - n)) == mine.end() ||
-                    line.find("x:Name=") != std::string::npos)
-                    break;
-                cut = start;
-            } else if (line.find_first_not_of(" \t\r\n") != std::string::npos) {
-                break;   // something else (the list's own tag)
-            }
-            p = start;
-        }
-        if (cut == le) continue;
-        page.erase(cut, le - cut);
-        page.insert(cut, "                                ");
-        changed = true;
-    }
-    return changed;
 }
 
 bool has(const char* bytes, int length, const char* what) {
@@ -4558,16 +4529,13 @@ void edit_page(void** out) {
         if (!g_kbm_tile.exchange(true)) logf("Pause > Settings: Keyboard & Mouse tile added");   // the page is read each time it shows
         return;
     }
-    // The Settings page may not have been read yet (it is when it first shows); the rows leave the
-    // MODS pages unless it couldn't be given the tile.
+    // Only the Mods page opened by our tile (just after it was pressed) is ours to change.
     if (g_kbm_failed.load()) return;
     const uint64_t opening = g_kbm_opening.exchange(0);
-    const bool ours        = opening && GetTickCount64() - opening < 5000;
-    if (!ours && filter_installed_page(text)) {
-        replace_resource(out, text);
-    } else if (filter_mods_page(text, ours)) {
-        if (replace_resource(out, text) && ours) find_descriptors();
-    } else if (ours) {
+    if (!opening || GetTickCount64() - opening >= 5000) return;
+    if (filter_mods_page(text)) {
+        if (replace_resource(out, text)) find_descriptors();
+    } else {
         logf("the Mods page isn't as expected: it shows every mod's rows");
     }
 }
@@ -4672,7 +4640,6 @@ void hook_settings_tile() {
 DWORD WINAPI start(LPVOID) {
     g_base = static_cast<uint8_t*>(g_api->wait_for_code(0xFFFFFFFFu));
     if (!g_base || !code_matches()) return 0;
-    lang::set_base(g_base);   // the game's language from now on (see lang.h)
     void** slot = reinterpret_cast<void**>(g_base + RVA_UI_UPDATE_SLOT);
     if (!g_api->hook_pointer(g_mod, "UserInterface::Update", slot, reinterpret_cast<void*>(&detour_update),
                              reinterpret_cast<void**>(&o_update)) ||
@@ -4815,17 +4782,17 @@ FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
     g_api = api;
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                        reinterpret_cast<LPCWSTR>(&fh2mod_init), &g_self);
-    lang::init(std::wstring(api->azimuth_dir) + L"\\FH2Mouse\\FH2Mouse.ini");   // the rows' language: the one seen last
     FH2ModInfo info{};
     info.size             = sizeof info;
-    info.name             = kModName;   // the Mods page ends our rows' descriptions with it (kOurSuffix)
+    info.name             = kModName;   // the Mods page ends heading over our rows (filter_mods_page)
     info.version          = FH2MOUSE_VERSION;
-    info.github_repo      = "qiangqiang101/FH2MouseKeyboard";
+    info.github_repo      = "qiangqiang101/FH2-MouseKeyboard";
     info.platform_version = FH2MOD_PLATFORM_VERSION;
     info.check_updates    = 1;
-    info.description      = lang::tr("Drive with the keyboard, point at things in the menus and click them, drag the map, turn the garage camera, place decals with the keyboard, and fly the photo mode camera, all without picking up a controller.");
+    info.description      = FH2_TR_DESCRIPTION("Drive with the keyboard, point at things in the menus and click them, drag the map, turn the garage camera, place decals with the keyboard, and fly the photo mode camera, all without picking up a controller.");
     g_mod                 = api->register_mod(&info);
     if (!g_mod) return 1;
+    lang::init(api, g_mod);   // the translations (see lang.h), before any text is looked up
     load_settings();
     load_extra_bindings();
     if (!g_cfg.enabled) {

@@ -1,0 +1,255 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: FH2 Mouse & Keyboard\n"
+"Language: zh_Hant\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "KEYBOARD & MOUSE"
+msgstr "鍵盤滑鼠"
+
+msgctxt "mod.description"
+msgid "Drive with the keyboard, point at things in the menus and click them, drag the map, turn the garage camera, place decals with the keyboard, and fly the photo mode camera, all without picking up a controller."
+msgstr "用鍵盤駕駛、在選單中指向並點擊、拖動地圖、旋轉車庫鏡頭、用鍵盤放置貼花，以及操控相片模式的鏡頭，全都不必拿起控制器。"
+
+msgid "Keyboard controls"
+msgstr "鍵盤操作"
+
+msgid "Drive with the keyboard and move around the menus with it. The rows below set the keys."
+msgstr "用鍵盤駕駛並操作選單。下方各列可設定按鍵。"
+
+msgid "Keyboard icons"
+msgstr "鍵盤圖示"
+
+msgid "While you play with the keyboard, the help bar shows its keys instead of the controller's buttons. A button on the controller brings the buttons back."
+msgstr "用鍵盤遊玩時，說明列會顯示按鍵而非控制器按鈕。按下控制器按鈕即恢復顯示按鈕。"
+
+msgid "Mouse hover selects"
+msgstr "滑鼠懸停即選取"
+
+msgid "Moving the mouse over a button, list row or slider selects it. Off, only a click does."
+msgstr "滑鼠移到按鈕、清單列或滑桿上即選取。關閉時只有點擊才會選取。"
+
+msgid "Mouse free look"
+msgstr "滑鼠自由視角"
+
+msgid "While driving, moving the mouse looks around. The cursor stays in the game's window: Alt+Tab to leave it."
+msgstr "駕駛時移動滑鼠即可查看四周。滑鼠指標會留在遊戲視窗內：按 Alt+Tab 離開。"
+
+msgid "Mouse free look sensitivity"
+msgstr "滑鼠自由視角靈敏度"
+
+msgid "How far the camera turns for the mouse's movement while you look around. 50 is the usual, 100 twice as far, 0 not at all."
+msgstr "查看四周時，鏡頭隨滑鼠移動轉動的幅度。50 為一般，100 為兩倍，0 則不轉動。"
+
+msgid "Keyboard preset"
+msgstr "鍵盤預設配置"
+
+msgid "Sets every key below at once. WS drive, arrow steer is the mod's own layout; AZERTY and QWERTZ put the keys where WASD's are on those keyboards. Changing a key makes it Custom."
+msgstr "一次設定下方所有按鍵。「WS 駕駛、方向鍵轉向」是此模組自己的配置；AZERTY 與 QWERTZ 會把按鍵放在這些鍵盤上 WASD 的位置。變更任一按鍵即成為自訂。"
+
+msgid "WASD drive"
+msgstr "WASD 駕駛"
+
+msgid "WS drive, arrow steer"
+msgstr "WS 駕駛、方向鍵轉向"
+
+msgid "Arrow drive"
+msgstr "方向鍵駕駛"
+
+msgid "Custom"
+msgstr "自訂"
+
+msgid "FH2 ANNA's key while driving, pressing the controller's d-pad for it. The open key is ANNA's whenever you drive, the others only while ANNA's menu is open: a driving key on the same key waits till then."
+msgstr "駕駛時 FH2 ANNA 的按鍵，會代為按下控制器的方向鍵。開啟鍵在駕駛時一直屬於 ANNA，其他按鍵只在 ANNA 選單開啟時屬於它：同一按鍵上的駕駛操作在此期間暫停。"
+
+msgid "ANNA Drone Mode's key while flying the drone. While it flies only its keys (and the radio's) count, so it can be a driving or menu key too."
+msgstr "ANNA Drone Mode 操控無人機時的按鍵。飛行時只有它的按鍵（與電台按鍵）有作用，因此也可以與駕駛或選單按鍵相同。"
+
+msgid "The key for this in the menus. It does nothing while driving, so it can be a driving key too."
+msgstr "選單中此操作的按鍵。駕駛時沒有作用，因此也可以是駕駛按鍵。"
+
+msgid "The key for this while driving: Extra Options' own, pressed on the controller button its ini gives it. It does nothing in the menus, so it can be a menu key too."
+msgstr "駕駛時此操作的按鍵：Extra Options 自己的功能，會按下其 ini 指定的控制器按鈕。在選單中沒有作用，因此也可以是選單按鍵。"
+
+msgid "The key for this while driving. It does nothing in the menus, so it can be a menu key too."
+msgstr "駕駛時此操作的按鍵。在選單中沒有作用，因此也可以是選單按鍵。"
+
+msgid "Gas"
+msgstr "油門"
+
+msgid "Brake / reverse"
+msgstr "煞車 / 倒車"
+
+msgid "Steer left"
+msgstr "向左轉"
+
+msgid "Steer right"
+msgstr "向右轉"
+
+msgid "Handbrake"
+msgstr "手煞車"
+
+msgid "Shift up"
+msgstr "升檔"
+
+msgid "Shift down"
+msgstr "降檔"
+
+msgid "Clutch"
+msgstr "離合器"
+
+msgid "Change camera"
+msgstr "切換鏡頭"
+
+msgid "Look back"
+msgstr "向後看"
+
+msgid "Look left"
+msgstr "向左看"
+
+msgid "Look right"
+msgstr "向右看"
+
+msgid "Rewind"
+msgstr "倒帶"
+
+msgid "Map"
+msgstr "地圖"
+
+msgid "Photo mode"
+msgstr "相片模式"
+
+msgid "Previous station"
+msgstr "上一個電台"
+
+msgid "Next station"
+msgstr "下一個電台"
+
+msgid "Telemetry"
+msgstr "車輛資料"
+
+msgid "Enter garage (prompts)"
+msgstr "進入車庫 (提示)"
+
+msgid "Nitro (FnFNitro)"
+msgstr "加速 (FnFNitro)"
+
+msgid "Horn (HonkHonk)"
+msgstr "警示音 (HonkHonk)"
+
+msgid "Left indicator"
+msgstr "左方向燈"
+
+msgid "Right indicator"
+msgstr "右方向燈"
+
+msgid "Hazard lights"
+msgstr "警示燈"
+
+msgid "Headlights"
+msgstr "頭燈"
+
+msgid "ANNA: open / close"
+msgstr "ANNA：開啟 / 關閉"
+
+msgid "ANNA: up"
+msgstr "ANNA：上"
+
+msgid "ANNA: down"
+msgstr "ANNA：下"
+
+msgid "ANNA: back"
+msgstr "ANNA：返回"
+
+msgid "ANNA: choose"
+msgstr "ANNA：選擇"
+
+msgid "ANNA: cinematic camera (autodrive)"
+msgstr "ANNA：電影鏡頭（自動駕駛）"
+
+msgid "FH2 ANNA's key while its autodrive drives: turns the cinematic camera on and off, holding the controller button ANNA's ini gives it (LB). It does nothing otherwise, so it can be a driving key too."
+msgstr "FH2 ANNA 自動駕駛時的按鍵：按住 ANNA ini 指定的控制器按鈕（LB）來開關電影鏡頭。其他時候不做任何事，所以也可以當駕駛按鍵。"
+
+msgid "Drone: forward"
+msgstr "無人機：前進"
+
+msgid "Drone: back"
+msgstr "無人機：後退"
+
+msgid "Drone: left"
+msgstr "無人機：左"
+
+msgid "Drone: right"
+msgstr "無人機：右"
+
+msgid "Drone: up"
+msgstr "無人機：上升"
+
+msgid "Drone: down"
+msgstr "無人機：下降"
+
+msgid "Drone: faster"
+msgstr "無人機：加速"
+
+msgid "Drone: back to the car"
+msgstr "無人機：回到車輛"
+
+msgid "Drone: look at the car"
+msgstr "無人機：看向車輛"
+
+msgid "Drone: hide / show the help"
+msgstr "無人機：隱藏 / 顯示說明"
+
+msgid "Drone: exit"
+msgstr "無人機：離開"
+
+msgid "Pause"
+msgstr "暫停"
+
+msgid "Menu: select"
+msgstr "選單：選擇"
+
+msgid "Menu: back"
+msgstr "選單：返回"
+
+msgid "Menu: up"
+msgstr "選單：上"
+
+msgid "Menu: down"
+msgstr "選單：下"
+
+msgid "Menu: left"
+msgstr "選單：左"
+
+msgid "Menu: right"
+msgstr "選單：右"
+
+msgid "Menu: previous tab"
+msgstr "選單：上一個分頁"
+
+msgid "Menu: next tab"
+msgstr "選單：下一個分頁"
+
+msgid "Menu: X button"
+msgstr "選單：X 按鈕"
+
+msgid "Menu: Y button"
+msgstr "選單：Y 按鈕"
+
+msgid "Menu: View button"
+msgstr "選單：檢視按鈕"
+
+msgid "Menu: left trigger"
+msgstr "選單：左觸發鍵"
+
+msgid "Menu: right trigger"
+msgstr "選單：右觸發鍵"
+
+msgid "Menu: left stick click"
+msgstr "選單：按下左搖桿"
+
+msgid "Menu: right stick click"
+msgstr "選單：按下右搖桿"

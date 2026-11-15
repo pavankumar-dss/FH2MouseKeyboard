@@ -1,0 +1,255 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: FH2 Mouse & Keyboard\n"
+"Language: pt_BR\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+
+msgid "KEYBOARD & MOUSE"
+msgstr "TECLADO E MOUSE"
+
+msgctxt "mod.description"
+msgid "Drive with the keyboard, point at things in the menus and click them, drag the map, turn the garage camera, place decals with the keyboard, and fly the photo mode camera, all without picking up a controller."
+msgstr "Dirija com o teclado, aponte e clique nos menus, arraste o mapa, gire a câmera da garagem, posicione adesivos com o teclado e voe com a câmera do modo foto, tudo sem pegar no controle."
+
+msgid "Keyboard controls"
+msgstr "Controles do teclado"
+
+msgid "Drive with the keyboard and move around the menus with it. The rows below set the keys."
+msgstr "Dirija com o teclado e navegue pelos menus com ele. As linhas abaixo definem as teclas."
+
+msgid "Keyboard icons"
+msgstr "Ícones do teclado"
+
+msgid "While you play with the keyboard, the help bar shows its keys instead of the controller's buttons. A button on the controller brings the buttons back."
+msgstr "Enquanto você joga com o teclado, a barra de ajuda mostra as teclas no lugar dos botões do controle. Apertar um botão do controle traz os botões de volta."
+
+msgid "Mouse hover selects"
+msgstr "Selecionar ao passar o mouse"
+
+msgid "Moving the mouse over a button, list row or slider selects it. Off, only a click does."
+msgstr "Passar o mouse sobre um botão, linha de lista ou controle deslizante o seleciona. Desativado, só um clique seleciona."
+
+msgid "Mouse free look"
+msgstr "Visão livre com o mouse"
+
+msgid "While driving, moving the mouse looks around. The cursor stays in the game's window: Alt+Tab to leave it."
+msgstr "Ao dirigir, mover o mouse olha ao redor. O cursor fica na janela do jogo: use Alt+Tab para sair dela."
+
+msgid "Mouse free look sensitivity"
+msgstr "Sensibilidade da visão livre"
+
+msgid "How far the camera turns for the mouse's movement while you look around. 50 is the usual, 100 twice as far, 0 not at all."
+msgstr "Quanto a câmera gira com o movimento do mouse ao olhar ao redor. 50 é o normal, 100 o dobro, 0 nada."
+
+msgid "Keyboard preset"
+msgstr "Predefinição do teclado"
+
+msgid "Sets every key below at once. WS drive, arrow steer is the mod's own layout; AZERTY and QWERTZ put the keys where WASD's are on those keyboards. Changing a key makes it Custom."
+msgstr "Define todas as teclas abaixo de uma vez. WS para dirigir, setas para virar é o layout do próprio mod; AZERTY e QWERTZ colocam as teclas onde ficam as do WASD nesses teclados. Mudar uma tecla o torna Personalizado."
+
+msgid "WASD drive"
+msgstr "Dirigir com WASD"
+
+msgid "WS drive, arrow steer"
+msgstr "WS para dirigir, setas para virar"
+
+msgid "Arrow drive"
+msgstr "Dirigir com as setas"
+
+msgid "Custom"
+msgstr "Personalizado"
+
+msgid "FH2 ANNA's key while driving, pressing the controller's d-pad for it. The open key is ANNA's whenever you drive, the others only while ANNA's menu is open: a driving key on the same key waits till then."
+msgstr "A tecla do FH2 ANNA ao dirigir, que aperta o direcional do controle por ele. A tecla de abrir é da ANNA sempre que você dirige; as outras, só com o menu da ANNA aberto, e uma ação de direção na mesma tecla espera até ele fechar."
+
+msgid "ANNA Drone Mode's key while flying the drone. While it flies only its keys (and the radio's) count, so it can be a driving or menu key too."
+msgstr "A tecla do ANNA Drone Mode ao pilotar o drone. Enquanto ele voa, só as teclas dele (e as do rádio) contam, então ela pode ser também uma tecla de direção ou de menu."
+
+msgid "The key for this in the menus. It does nothing while driving, so it can be a driving key too."
+msgstr "A tecla para isto nos menus. Não faz nada ao dirigir, então pode ser também uma tecla de direção."
+
+msgid "The key for this while driving: Extra Options' own, pressed on the controller button its ini gives it. It does nothing in the menus, so it can be a menu key too."
+msgstr "A tecla para isto ao dirigir: a do próprio Extra Options, apertada no botão do controle que o ini dele define. Não faz nada nos menus, então pode ser também uma tecla de menu."
+
+msgid "The key for this while driving. It does nothing in the menus, so it can be a menu key too."
+msgstr "A tecla para isto ao dirigir. Não faz nada nos menus, então pode ser também uma tecla de menu."
+
+msgid "Gas"
+msgstr "Acelerar"
+
+msgid "Brake / reverse"
+msgstr "Frear / ré"
+
+msgid "Steer left"
+msgstr "Virar à esquerda"
+
+msgid "Steer right"
+msgstr "Virar à direita"
+
+msgid "Handbrake"
+msgstr "Freio de mão"
+
+msgid "Shift up"
+msgstr "Subir marcha"
+
+msgid "Shift down"
+msgstr "Reduzir marcha"
+
+msgid "Clutch"
+msgstr "Embreagem"
+
+msgid "Change camera"
+msgstr "Mudar câmera"
+
+msgid "Look back"
+msgstr "Olhar para trás"
+
+msgid "Look left"
+msgstr "Olhar para a esquerda"
+
+msgid "Look right"
+msgstr "Olhar para a direita"
+
+msgid "Rewind"
+msgstr "Rebobinar"
+
+msgid "Map"
+msgstr "Mapa"
+
+msgid "Photo mode"
+msgstr "Modo foto"
+
+msgid "Previous station"
+msgstr "Estação anterior"
+
+msgid "Next station"
+msgstr "Próxima estação"
+
+msgid "Telemetry"
+msgstr "Telemetria"
+
+msgid "Enter garage (prompts)"
+msgstr "Entrar na garagem (avisos)"
+
+msgid "Nitro (FnFNitro)"
+msgstr "Nitro (FnFNitro)"
+
+msgid "Horn (HonkHonk)"
+msgstr "Buzina (HonkHonk)"
+
+msgid "Left indicator"
+msgstr "Seta esquerda"
+
+msgid "Right indicator"
+msgstr "Seta direita"
+
+msgid "Hazard lights"
+msgstr "Pisca-alerta"
+
+msgid "Headlights"
+msgstr "Faróis"
+
+msgid "ANNA: open / close"
+msgstr "ANNA: abrir / fechar"
+
+msgid "ANNA: up"
+msgstr "ANNA: cima"
+
+msgid "ANNA: down"
+msgstr "ANNA: baixo"
+
+msgid "ANNA: back"
+msgstr "ANNA: voltar"
+
+msgid "ANNA: choose"
+msgstr "ANNA: escolher"
+
+msgid "ANNA: cinematic camera (autodrive)"
+msgstr "ANNA: câmera cinematográfica (direção automática)"
+
+msgid "FH2 ANNA's key while its autodrive drives: turns the cinematic camera on and off, holding the controller button ANNA's ini gives it (LB). It does nothing otherwise, so it can be a driving key too."
+msgstr "Tecla do FH2 ANNA durante a direção automática: liga e desliga a câmera cinematográfica, segurando o botão do controle definido no ini da ANNA (LB). Fora disso não faz nada, então pode ser também uma tecla de direção."
+
+msgid "Drone: forward"
+msgstr "Drone: frente"
+
+msgid "Drone: back"
+msgstr "Drone: trás"
+
+msgid "Drone: left"
+msgstr "Drone: esquerda"
+
+msgid "Drone: right"
+msgstr "Drone: direita"
+
+msgid "Drone: up"
+msgstr "Drone: subir"
+
+msgid "Drone: down"
+msgstr "Drone: descer"
+
+msgid "Drone: faster"
+msgstr "Drone: mais rápido"
+
+msgid "Drone: back to the car"
+msgstr "Drone: voltar ao carro"
+
+msgid "Drone: look at the car"
+msgstr "Drone: olhar para o carro"
+
+msgid "Drone: hide / show the help"
+msgstr "Drone: ocultar / mostrar a ajuda"
+
+msgid "Drone: exit"
+msgstr "Drone: sair"
+
+msgid "Pause"
+msgstr "Pausar"
+
+msgid "Menu: select"
+msgstr "Menu: selecionar"
+
+msgid "Menu: back"
+msgstr "Menu: voltar"
+
+msgid "Menu: up"
+msgstr "Menu: cima"
+
+msgid "Menu: down"
+msgstr "Menu: baixo"
+
+msgid "Menu: left"
+msgstr "Menu: esquerda"
+
+msgid "Menu: right"
+msgstr "Menu: direita"
+
+msgid "Menu: previous tab"
+msgstr "Menu: aba anterior"
+
+msgid "Menu: next tab"
+msgstr "Menu: próxima aba"
+
+msgid "Menu: X button"
+msgstr "Menu: botão X"
+
+msgid "Menu: Y button"
+msgstr "Menu: botão Y"
+
+msgid "Menu: View button"
+msgstr "Menu: botão Exibir"
+
+msgid "Menu: left trigger"
+msgstr "Menu: gatilho esquerdo"
+
+msgid "Menu: right trigger"
+msgstr "Menu: gatilho direito"
+
+msgid "Menu: left stick click"
+msgstr "Menu: clique analógico esq."
+
+msgid "Menu: right stick click"
+msgstr "Menu: clique analógico dir."
