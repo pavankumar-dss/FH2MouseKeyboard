@@ -325,3 +325,21 @@ msgstr "컨트롤러: 오른쪽 스틱 오른쪽"
 
 msgid "Controller: right stick click"
 msgstr "컨트롤러: 오른쪽 스틱 누르기"
+
+msgid "Controller remapping"
+msgstr "컨트롤러 버튼 재배치"
+
+msgid "Keys and mouse"
+msgstr "키와 마우스"
+
+msgid "Keyboard & Mouse"
+msgstr "키보드 및 마우스"
+
+msgid "Off"
+msgstr "끄기"
+
+msgid "On"
+msgstr "켜기"
+
+msgid "The keys and the mouse are set on their own page: Pause > Settings > Keyboard & Mouse. The controller's buttons are under Pause > Settings > Controls."
+msgstr "키와 마우스는 전용 페이지에서 설정합니다: 일시 정지 > 설정 > 키보드 및 마우스. 컨트롤러 버튼은 일시 정지 > 설정 > 조작에 있습니다."

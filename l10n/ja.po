@@ -325,3 +325,21 @@ msgstr "コントローラー: 右スティック右"
 
 msgid "Controller: right stick click"
 msgstr "コントローラー: 右スティック押し込み"
+
+msgid "Controller remapping"
+msgstr "コントローラーの割り当て変更"
+
+msgid "Keys and mouse"
+msgstr "キーとマウス"
+
+msgid "Keyboard & Mouse"
+msgstr "キーボードとマウス"
+
+msgid "Off"
+msgstr "オフ"
+
+msgid "On"
+msgstr "オン"
+
+msgid "The keys and the mouse are set on their own page: Pause > Settings > Keyboard & Mouse. The controller's buttons are under Pause > Settings > Controls."
+msgstr "キーとマウスは専用ページで設定します: ポーズ > 設定 > キーボードとマウス。コントローラーのボタンはポーズ > 設定 > 操作にあります。"

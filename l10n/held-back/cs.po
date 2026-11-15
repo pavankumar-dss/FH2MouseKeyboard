@@ -325,3 +325,21 @@ msgstr "Ovladač: pravá páčka doprava"
 
 msgid "Controller: right stick click"
 msgstr "Ovladač: stisk pravé páčky"
+
+msgid "Controller remapping"
+msgstr "Přemapování ovladače"
+
+msgid "Keys and mouse"
+msgstr "Klávesy a myš"
+
+msgid "Keyboard & Mouse"
+msgstr "Klávesnice a myš"
+
+msgid "Off"
+msgstr "Vypnuto"
+
+msgid "On"
+msgstr "Zapnuto"
+
+msgid "The keys and the mouse are set on their own page: Pause > Settings > Keyboard & Mouse. The controller's buttons are under Pause > Settings > Controls."
+msgstr "Klávesy a myš se nastavují na vlastní stránce: Pauza > Nastavení > Klávesnice a myš. Tlačítka ovladače jsou v Pauza > Nastavení > Ovládání."

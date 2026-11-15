@@ -325,3 +325,21 @@ msgstr "Kontroler: prawa gałka w prawo"
 
 msgid "Controller: right stick click"
 msgstr "Kontroler: wciśnięcie prawej gałki"
+
+msgid "Controller remapping"
+msgstr "Zmiana układu kontrolera"
+
+msgid "Keys and mouse"
+msgstr "Klawisze i mysz"
+
+msgid "Keyboard & Mouse"
+msgstr "Klawiatura i mysz"
+
+msgid "Off"
+msgstr "Wył."
+
+msgid "On"
+msgstr "Wł."
+
+msgid "The keys and the mouse are set on their own page: Pause > Settings > Keyboard & Mouse. The controller's buttons are under Pause > Settings > Controls."
+msgstr "Klawisze i mysz ustawiasz na osobnej stronie: Pauza > Ustawienia > Klawiatura i mysz. Przyciski kontrolera są w Pauza > Ustawienia > Sterowanie."

@@ -325,3 +325,21 @@ msgstr "Controller: levetta destra destra"
 
 msgid "Controller: right stick click"
 msgstr "Controller: clic levetta destra"
+
+msgid "Controller remapping"
+msgstr "Rimappatura del controller"
+
+msgid "Keys and mouse"
+msgstr "Tasti e mouse"
+
+msgid "Keyboard & Mouse"
+msgstr "Tastiera e mouse"
+
+msgid "Off"
+msgstr "Disattivato"
+
+msgid "On"
+msgstr "Attivato"
+
+msgid "The keys and the mouse are set on their own page: Pause > Settings > Keyboard & Mouse. The controller's buttons are under Pause > Settings > Controls."
+msgstr "I tasti e il mouse si impostano nella loro pagina: Pausa > Impostazioni > Tastiera e mouse. I pulsanti del controller sono in Pausa > Impostazioni > Comandi."

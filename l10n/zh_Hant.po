@@ -325,3 +325,21 @@ msgstr "控制器：右搖桿右"
 
 msgid "Controller: right stick click"
 msgstr "控制器：按下右搖桿"
+
+msgid "Controller remapping"
+msgstr "控制器按鍵重新配置"
+
+msgid "Keys and mouse"
+msgstr "按鍵與滑鼠"
+
+msgid "Keyboard & Mouse"
+msgstr "鍵盤與滑鼠"
+
+msgid "Off"
+msgstr "關閉"
+
+msgid "On"
+msgstr "開啟"
+
+msgid "The keys and the mouse are set on their own page: Pause > Settings > Keyboard & Mouse. The controller's buttons are under Pause > Settings > Controls."
+msgstr "按鍵與滑鼠在專屬頁面設定：暫停 > 設定 > 鍵盤與滑鼠。控制器按鈕在暫停 > 設定 > 操作。"

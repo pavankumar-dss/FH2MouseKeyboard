@@ -325,3 +325,21 @@ msgstr "Kontroller: jobb kar jobbra"
 
 msgid "Controller: right stick click"
 msgstr "Kontroller: jobb kar lenyomása"
+
+msgid "Controller remapping"
+msgstr "Kontroller átkiosztása"
+
+msgid "Keys and mouse"
+msgstr "Billentyűk és egér"
+
+msgid "Keyboard & Mouse"
+msgstr "Billentyűzet és egér"
+
+msgid "Off"
+msgstr "Ki"
+
+msgid "On"
+msgstr "Be"
+
+msgid "The keys and the mouse are set on their own page: Pause > Settings > Keyboard & Mouse. The controller's buttons are under Pause > Settings > Controls."
+msgstr "A billentyűket és az egeret saját oldalon állíthatod be: Szünet > Beállítások > Billentyűzet és egér. A kontroller gombjai a Szünet > Beállítások > Irányítás alatt vannak."

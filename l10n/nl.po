@@ -325,3 +325,21 @@ msgstr "Controller: rechterstick rechts"
 
 msgid "Controller: right stick click"
 msgstr "Controller: rechterstick indrukken"
+
+msgid "Controller remapping"
+msgstr "Controller opnieuw indelen"
+
+msgid "Keys and mouse"
+msgstr "Toetsen en muis"
+
+msgid "Keyboard & Mouse"
+msgstr "Toetsenbord en muis"
+
+msgid "Off"
+msgstr "Uit"
+
+msgid "On"
+msgstr "Aan"
+
+msgid "The keys and the mouse are set on their own page: Pause > Settings > Keyboard & Mouse. The controller's buttons are under Pause > Settings > Controls."
+msgstr "De toetsen en de muis stel je in op een eigen pagina: Pauze > Instellingen > Toetsenbord en muis. De knoppen van de controller staan onder Pauze > Instellingen > Besturing."

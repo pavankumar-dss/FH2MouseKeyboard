@@ -325,3 +325,21 @@ msgstr "Control: stick derecho derecha"
 
 msgid "Controller: right stick click"
 msgstr "Control: presionar stick derecho"
+
+msgid "Controller remapping"
+msgstr "Reasignar el control"
+
+msgid "Keys and mouse"
+msgstr "Teclas y mouse"
+
+msgid "Keyboard & Mouse"
+msgstr "Teclado y mouse"
+
+msgid "Off"
+msgstr "Desactivado"
+
+msgid "On"
+msgstr "Activado"
+
+msgid "The keys and the mouse are set on their own page: Pause > Settings > Keyboard & Mouse. The controller's buttons are under Pause > Settings > Controls."
+msgstr "Las teclas y el mouse se ajustan en su propia página: Pausa > Ajustes > Teclado y mouse. Los botones del control están en Pausa > Ajustes > Controles."

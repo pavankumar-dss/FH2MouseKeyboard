@@ -325,3 +325,21 @@ msgstr "Manette : stick droit droite"
 
 msgid "Controller: right stick click"
 msgstr "Manette : clic du stick droit"
+
+msgid "Controller remapping"
+msgstr "Remappage de la manette"
+
+msgid "Keys and mouse"
+msgstr "Touches et souris"
+
+msgid "Keyboard & Mouse"
+msgstr "Clavier et souris"
+
+msgid "Off"
+msgstr "Désactivé"
+
+msgid "On"
+msgstr "Activé"
+
+msgid "The keys and the mouse are set on their own page: Pause > Settings > Keyboard & Mouse. The controller's buttons are under Pause > Settings > Controls."
+msgstr "Les touches et la souris se règlent sur leur propre page : Pause > Paramètres > Clavier et souris. Les boutons de la manette sont dans Pause > Paramètres > Commandes."

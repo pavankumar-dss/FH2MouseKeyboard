@@ -325,3 +325,21 @@ msgstr "Контроллер: правый стик вправо"
 
 msgid "Controller: right stick click"
 msgstr "Контроллер: нажатие правого стика"
+
+msgid "Controller remapping"
+msgstr "Переназначение контроллера"
+
+msgid "Keys and mouse"
+msgstr "Клавиши и мышь"
+
+msgid "Keyboard & Mouse"
+msgstr "Клавиатура и мышь"
+
+msgid "Off"
+msgstr "Выкл."
+
+msgid "On"
+msgstr "Вкл."
+
+msgid "The keys and the mouse are set on their own page: Pause > Settings > Keyboard & Mouse. The controller's buttons are under Pause > Settings > Controls."
+msgstr "Клавиши и мышь настраиваются на отдельной странице: Пауза > Настройки > Клавиатура и мышь. Кнопки контроллера — в разделе Пауза > Настройки > Управление."

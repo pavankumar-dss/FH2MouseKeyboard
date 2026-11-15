@@ -325,3 +325,21 @@ msgstr "Controle: analógico dir. direita"
 
 msgid "Controller: right stick click"
 msgstr "Controle: clique analógico dir."
+
+msgid "Controller remapping"
+msgstr "Remapeamento do controle"
+
+msgid "Keys and mouse"
+msgstr "Teclas e mouse"
+
+msgid "Keyboard & Mouse"
+msgstr "Teclado e mouse"
+
+msgid "Off"
+msgstr "Desligado"
+
+msgid "On"
+msgstr "Ligado"
+
+msgid "The keys and the mouse are set on their own page: Pause > Settings > Keyboard & Mouse. The controller's buttons are under Pause > Settings > Controls."
+msgstr "As teclas e o mouse ficam na própria página: Pausa > Configurações > Teclado e mouse. Os botões do controle ficam em Pausa > Configurações > Controles."

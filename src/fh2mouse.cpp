@@ -662,6 +662,7 @@ const PadAction kPadActions[] = {
 const char* const kPadOtherActions[] = {"LookStraightBack", "MiniLeaderboard"};
 
 std::mutex g_pad_mx;                                       // guards these four
+std::atomic<bool> g_pad_enabled{true};                     // [Controller] Enabled: off, the game's layouts as they are
 bool g_pad_custom = false;                                 // [Controller] Custom
 std::array<std::string, kPadButtonCount> g_pad_action;     // the game's names, "" none
 std::array<std::string, kPadButtonCount> g_game_layout;    // the layout the game loaded last (its own)
@@ -685,12 +686,13 @@ const char* pad_action_name(const std::string& text) {
 void load_controller(const std::wstring& ini) {
     wchar_t probe[4];
     if (!GetPrivateProfileSectionW(L"Controller", probe, 4, ini.c_str())) {
-        std::string text = "\r\n; The controller's layout (also on Pause > Settings > Controls). Custom=0 uses the\r\n"
+        std::string text = "\r\n; The controller's layout (also on Pause > Settings > Controls). Enabled=0 turns the remapping\r\n"
+                           "; off (its row is first there): the game's layouts as they are, and no other rows. Custom=0 uses the\r\n"
                            "; layout picked in Settings > Controls; Custom=1 uses the buttons below instead. Each button\r\n"
                            "; gets one action: Gas, Brake, Handbrake, ShiftUp, ShiftDown, Clutch, SwitchCamera,\r\n"
                            "; LookForward, LookBack, LookLeft, LookRight, Rewind, PhotoMode, Telemetry, RadioLeft,\r\n"
                            "; RadioRight, Map, or None. The left stick's left / right always steers.\r\n"
-                           "[Controller]\r\nCustom=0\r\n";
+                           "[Controller]\r\nEnabled=1\r\nCustom=0\r\n";
         for (const PadButton& b : kPadButtons) text += std::string(b.column) + "=" + (*b.stock ? b.stock : "None") + "\r\n";
         if (HANDLE f = CreateFileW(ini.c_str(), FILE_APPEND_DATA, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
             f != INVALID_HANDLE_VALUE) {
@@ -700,7 +702,8 @@ void load_controller(const std::wstring& ini) {
         }
     }
     std::lock_guard<std::mutex> lock(g_pad_mx);
-    g_pad_custom = GetPrivateProfileIntW(L"Controller", L"Custom", 0, ini.c_str()) != 0;
+    g_pad_enabled = GetPrivateProfileIntW(L"Controller", L"Enabled", 1, ini.c_str()) != 0;
+    g_pad_custom  = GetPrivateProfileIntW(L"Controller", L"Custom", 0, ini.c_str()) != 0;
     for (int c = 0; c < kPadButtonCount; ++c) {
         wchar_t buf[64] = {};
         GetPrivateProfileStringW(L"Controller", widen(kPadButtons[c].column).c_str(), widen(kPadButtons[c].stock).c_str(), buf,
@@ -784,14 +787,20 @@ void pad_row_changed(void*, const char* key, int value) {
 
 // Each button row's choices: the actions above, or what the ini has if that's another of the game's.
 // The rows themselves go on the game's Settings > Controls page (see "The controller rows").
-void set_up_controller_rows() {
+// FH2Controls or CustomBindings is installed: it sets the controller's layout, and we don't.
+bool other_layout_mod() {
     const std::wstring mods = std::wstring(g_api->azimuth_dir) + L"\\fh2-mods\\";
     for (const wchar_t* other : {L"FH2Controls.dll", L"CustomBindings.dll"})
-        if (GetFileAttributesW((mods + other).c_str()) != INVALID_FILE_ATTRIBUTES) {
-            g_pad_conflict = true;
-            g_api->log(g_mod, "FH2Controls or CustomBindings is installed and sets the controller's layout: no controller rows");
-            return;
-        }
+        if (GetFileAttributesW((mods + other).c_str()) != INVALID_FILE_ATTRIBUTES) return true;
+    return false;
+}
+
+void set_up_controller_rows() {
+    if (other_layout_mod()) {
+        g_pad_conflict = true;
+        g_api->log(g_mod, "FH2Controls or CustomBindings is installed and sets the controller's layout: no controller rows");
+        return;
+    }
     std::lock_guard<std::mutex> lock(g_pad_mx);
     for (int c = 0; c < kPadButtonCount; ++c) {
         for (const PadAction& a : kPadActions) {
@@ -2085,7 +2094,7 @@ void* load_layout(void* bindings, int id, uint8_t kind, void* options) {
     bool custom;
     {
         std::lock_guard<std::mutex> lock(g_pad_mx);
-        custom = g_pad_custom;
+        custom = g_pad_custom && g_pad_enabled.load();   // remapping off: the game's layout, as Game's
         if (custom) g_loading = g_pad_action;
     }
     // The game's row is read either way (its columns kept), or the first for an id that isn't one.
@@ -2254,13 +2263,17 @@ constexpr int kPadRowCount = kPadButtonCount + 1;   // the layout row, then the 
 NativeProperty g_pad_props[kPadRowCount];
 PropertyLink g_pad_links[kPadRowCount];
 std::string g_pad_prop_names[kPadRowCount];
+// The remapping's own row, Off / On: first of ours on the page, and the only one while it's off.
+NativeProperty g_remap_prop;
+PropertyLink g_remap_link;
 
 // A row's value: the layout row's 0 Game's, 1 Custom; a button row's place in its choices.
 int pad_native_value(int row, void* page = nullptr) {
     std::lock_guard<std::mutex> lock(g_pad_mx);
-    if (row == 0) return g_pad_custom ? 1 : 0;
+    const bool custom = g_pad_custom && g_pad_enabled.load();   // remapping off: the game's, as Game's shows it
+    if (row == 0) return custom ? 1 : 0;
     const int c = kPadRowOrder[row - 1];
-    const auto* picked = g_pad_custom ? nullptr : page_layout(page);   // Game's: the page's pick, as its diagram shows
+    const auto* picked = custom ? nullptr : page_layout(page);   // Game's: the page's pick, as its diagram shows
     const int v = pad_row_value(c, (picked ? *picked : pad_shown())[c]);
     return v < 0 ? 0 : v;
 }
@@ -2276,7 +2289,7 @@ void pad_native_set(NativeProperty* property, void* page, void* boxed) {
     float f = -1;
     if (!boxed || row < 0 || row >= kPadRowCount) return;
     std::memcpy(&f, static_cast<uint8_t*>(boxed) + 0x28, sizeof f);
-    if (!(f >= 0 && f < 1000)) return;
+    if (!(f >= 0 && f < 1000) || !g_pad_enabled.load()) return;   // greyed out while the remapping is off
     const int value = static_cast<int>(f + 0.5f);
     if (value == pad_native_value(row, page)) return;   // the page telling us what we told it
     const std::string key = row == 0 ? "PadLayout" : pad_row_key(kPadRowOrder[row - 1]);
@@ -2294,6 +2307,32 @@ void pad_native_set(NativeProperty* property, void* page, void* boxed) {
     const auto changed = reinterpret_cast<void (*)(void*, NativeProperty*)>(g_base + RVA_PROPERTY_CHANGED);
     if (page)
         for (NativeProperty& p : g_pad_props) changed(page, &p);
+}
+
+void** remap_native_get(void** out, NativeProperty*, void*) {
+    const float value = g_pad_enabled.load() ? 1.0f : 0.0f;
+    *out = nullptr;
+    return reinterpret_cast<void** (*)(void**, const float*)>(g_base + RVA_PAD_BOX_FLOAT)(out, &value);
+}
+
+// Off: the game's layout at once (load_layout lets it through), the other rows greyed out showing it. On: the
+// custom layout again (if that's what's picked), and the rows to change it.
+void remap_native_set(NativeProperty*, void* page, void* boxed) {
+    float f = -1;
+    if (!boxed) return;
+    std::memcpy(&f, static_cast<uint8_t*>(boxed) + 0x28, sizeof f);
+    if (!(f >= 0 && f < 2)) return;
+    const bool on = f >= 0.5f;
+    if (on == g_pad_enabled.load()) return;   // the page telling us what we told it
+    g_pad_enabled = on;
+    WritePrivateProfileStringW(L"Controller", L"Enabled", on ? L"1" : L"0", g_ini.c_str());
+    g_api->log(g_mod, on ? "controller remapping on" : "controller remapping off: the game's layouts as they are");
+    g_pad_apply = true;
+    // the other rows grey out (or back) and show the layout that's in use now, as does the diagram
+    if (!page) return;
+    const auto changed = reinterpret_cast<void (*)(void*, NativeProperty*)>(g_base + RVA_PROPERTY_CHANGED);
+    changed(page, &g_remap_prop);
+    for (NativeProperty& p : g_pad_props) changed(page, &p);
 }
 
 // Text for a page read as the Settings pages are: not as UTF-8, so what isn't ASCII goes as
@@ -2315,7 +2354,8 @@ std::string xaml_text(const std::string& utf8) {
 }
 
 // A row's style: a slider drawn as the game draws a spinner, with a text for each choice.
-std::string pad_row_style(const std::string& key, const std::vector<std::string>& labels) {
+// `remapped`: a layout or button row, greyed out (and passed over) while the remapping's switch is Off.
+std::string pad_row_style(const std::string& key, const std::vector<std::string>& labels, bool remapped = true) {
     const int last = static_cast<int>(labels.size()) - 1;
     std::string x = "            <Style x:Key=\"" + key + "\" TargetType=\"Slider\" BasedOn=\"{StaticResource A_Style_Slider_Options}\">\r\n"
                     "                <Setter Property=\"Minimum\" Value=\"0\" />\r\n"
@@ -2353,8 +2393,15 @@ std::string pad_row_style(const std::string& key, const std::vector<std::string>
     x += "                            </ControlTemplate.Triggers>\r\n"
          "                        </ControlTemplate>\r\n"
          "                    </Setter.Value>\r\n"
-         "                </Setter>\r\n"
-         "            </Style>\r\n";
+         "                </Setter>\r\n";
+    if (remapped)
+        x += "                <Style.Triggers>\r\n"
+             "                    <DataTrigger Binding=\"{Binding FH2Mouse_PadRemap}\" Value=\"0\">\r\n"
+             "                        <Setter Property=\"IsEnabled\" Value=\"False\" />\r\n"
+             "                        <Setter Property=\"Opacity\" Value=\"0.4\" />\r\n"
+             "                    </DataTrigger>\r\n"
+             "                </Style.Triggers>\r\n";
+    x += "            </Style>\r\n";
     return x;
 }
 
@@ -2532,12 +2579,14 @@ bool add_controls_rows(std::string& text) {
         return "                                    <Slider Value=\"{Binding " + property + "}\" Tag=\"" + xaml_text(label) +
                "\" Style=\"{StaticResource " + style + "}\" />\r\n";
     };
-    std::string rows = row(lang::tr("Controller layout"), g_pad_prop_names[0], style_of({lang::tr("Game's"), lang::tr("Custom")}));
+    // The remapping's switch, then the layout and the buttons (greyed out while it's Off).
+    std::string rows = row(lang::tr("Controller remapping"), "FH2Mouse_PadRemap", "FH2Mouse_PadRemapRow");
+    rows += row(lang::tr("Controller layout"), g_pad_prop_names[0], style_of({lang::tr("Game's"), lang::tr("Custom")}));
     for (int r = 1; r < kPadRowCount; ++r) {
         const int c = kPadRowOrder[r - 1];
         rows += row(lang::tr(kPadButtons[c].label), g_pad_prop_names[r], style_of(g_pad_labels[c]));
     }
-    std::string styles;
+    std::string styles = pad_row_style("FH2Mouse_PadRemapRow", {lang::tr("Off"), lang::tr("On")}, false);
     for (std::size_t i = 0; i < lists.size(); ++i) styles += pad_row_style("FH2Mouse_PadRow_" + std::to_string(i), lists[i]);
     // The diagram: the game's control (after the list, so the later places go first) becomes ours.
     static const char game_diagram[] = "<Control Style=\"{StaticResource A_Style_Control_ControllerMapping}\">";
@@ -2628,6 +2677,14 @@ bool add_controls_page_rows() {
         g_pad_links[r].property = &p;
         reinterpret_cast<void (*)(void*, PropertyLink*)>(g_base + RVA_REGISTER_PROPERTY)(g_base + RVA_CONTROLS_TYPE, &g_pad_links[r]);
     }
+    reinterpret_cast<void (*)(void*)>(g_base + RVA_PAD_OBJECT_INIT)(&g_remap_prop);
+    g_remap_prop.vtable = model->vtable;
+    std::memcpy(reinterpret_cast<uint8_t*>(&g_remap_prop) + 0x28, reinterpret_cast<const uint8_t*>(model) + 0x28, 0x30);
+    g_remap_prop.name     = "FH2Mouse_PadRemap";
+    g_remap_prop.getter   = reinterpret_cast<void*>(&remap_native_get);
+    g_remap_prop.setter   = reinterpret_cast<void*>(&remap_native_set);
+    g_remap_link.property = &g_remap_prop;
+    reinterpret_cast<void (*)(void*, PropertyLink*)>(g_base + RVA_REGISTER_PROPERTY)(g_base + RVA_CONTROLS_TYPE, &g_remap_link);
     return true;
 }
 
@@ -5320,6 +5377,12 @@ void find_descriptors() {
              static_cast<int>(g_open_props.size()));
 }
 
+// A row's label as a page has it, without the " *" the platform puts after one that needs a restart.
+std::string row_heading(std::string h) {
+    if (h.size() >= 2 && !h.compare(h.size() - 2, 2, " *")) h.resize(h.size() - 2);
+    return h;
+}
+
 // The Mods page (A_ModOptions.xaml, the list that stands in for the MODS tab, platform 2.9.0): a
 // heading row for each mod (FH2Mod_InfoRow_Heading, its name in BindingProxy.A), then its rows, its
 // Pop-ups and Load switches. Ours keeps only our rows, from under our heading, and gets our title.
@@ -5342,7 +5405,7 @@ bool filter_mods_page(std::string& page) {
         const std::string el = page.substr(n, e - n);
         const std::size_t h = el.find("Heading=\""), he = h == std::string::npos ? h : el.find('"', h + 9);
         if (he == std::string::npos) continue;
-        const std::string heading = el.substr(h + 9, he - h - 9);
+        const std::string heading = row_heading(el.substr(h + 9, he - h - 9));
         if (std::find(labels.begin(), labels.end(), heading) != labels.end()) mine.push_back(page.substr(n, q - n));
     }
     std::size_t l = page.find(list_at);
@@ -5376,7 +5439,7 @@ bool filter_mods_page(std::string& page) {
         const std::size_t h = page.find(item + line.substr(n, q - n) + "\"");
         if (be != std::string::npos && h != std::string::npos) {
             const std::size_t hs = page.find("Heading=\"", h), he = hs == std::string::npos ? hs : page.find('"', hs + 9);
-            const std::string heading = he == std::string::npos ? std::string() : page.substr(hs + 9, he - hs - 9);
+            const std::string heading = he == std::string::npos ? std::string() : row_heading(page.substr(hs + 9, he - hs - 9));
             for (std::size_t k = 0; k < labels.size(); ++k)
                 if (labels[k] == heading) props.emplace_back(g_row_names[k].second, line.substr(b + 9, be - b - 9));
         }
@@ -5394,6 +5457,80 @@ bool filter_mods_page(std::string& page) {
     replace_once(page, selected, "");
     g_open_props = props;
     replace_once(page, title, "Content=\"" + tile_title() + "\"");
+    return true;
+}
+
+// MODS > YOUR MODS (A_ModPage_01.xaml): each mod's page is a view of it (FH2Mod_View_<k>), a list of its
+// own (FH2Mod_List_<k>), titled with the mod's name in capitals. Ours shows a line saying where the keys
+// are instead of our rows, which are on Keyboard & Mouse. The platform finds what A does on a row, and
+// which row the page opens on, by its place in the list, so every row keeps its place: the first of
+// ours becomes the line (keeping its name, which the page focuses), the others are collapsed.
+bool hide_rows_on_mod_page(std::string& page) {
+    std::string name = kModName;
+    for (char& c : name) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    const std::size_t t = page.find("Content=\"" + xml_escape(name) + "\"");
+    const std::size_t v = t == std::string::npos ? t : page.rfind("FH2Mod_View_", t);
+    if (v == std::string::npos || page.rfind('\n', t) > v) return false;   // the view's number is on the title's line
+    const std::string k = page.substr(v + 12, page.find_first_not_of("0123456789", v + 12) - (v + 12));
+    if (k.empty()) return false;
+    const std::string item = "<local:TileMenuDataItem x:Key=\"FH2Mod_V" + k + "_", tag = "Tag=\"{StaticResource FH2Mod_V" + k + "_";
+    std::vector<std::string> labels;
+    for (const auto& [en, key] : g_row_names) labels.push_back(xml_escape(lang::tr(en.c_str())));
+    std::vector<std::string> mine;   // our rows' items, by number
+    std::size_t first_item = std::string::npos;
+    for (std::size_t p = page.find(item); p != std::string::npos; p = page.find(item, p + 1)) {
+        if (first_item == std::string::npos) first_item = page.rfind('\n', p) + 1;
+        const std::size_t n = p + item.size(), q = page.find('"', n), e = page.find("/>", n);
+        if (q == std::string::npos || e == std::string::npos) return false;
+        const std::string el = page.substr(n, e - n);
+        const std::size_t h = el.find("Heading=\""), he = h == std::string::npos ? h : el.find('"', h + 9);
+        if (he != std::string::npos && std::find(labels.begin(), labels.end(), row_heading(el.substr(h + 9, he - h - 9))) != labels.end())
+            mine.push_back(page.substr(n, q - n));
+    }
+    const std::size_t l = page.find("x:Name=\"FH2Mod_List_" + k + "\"");
+    std::size_t le      = l == std::string::npos ? l : page.find("</local:CommonListBox>", l);
+    if (mine.empty() || first_item == std::string::npos || le == std::string::npos) return false;
+    bool line_made = false;
+    int hidden     = 0;
+    for (std::size_t p = page.find('\n', l) + 1; p < le;) {
+        std::size_t e = page.find('\n', p);
+        e = e == std::string::npos || e > le ? le : e + 1;
+        const std::size_t at = page.find(tag, p);
+        if (at == std::string::npos || at >= e) {
+            p = e;
+            continue;
+        }
+        const std::size_t n = at + tag.size(), q = page.find('}', n);
+        if (q >= e || std::find(mine.begin(), mine.end(), page.substr(n, q - n)) == mine.end()) {
+            p = e;
+            continue;
+        }
+        std::string line = page.substr(p, e - p);
+        const std::size_t open = line.find('<'), close = line.rfind("/>");
+        if (open == std::string::npos || close == std::string::npos) return false;
+        if (!line_made) {
+            const std::size_t nm = line.find(" x:Name=\"");
+            const std::string keep = nm == std::string::npos ? std::string() : line.substr(nm, line.find('"', nm + 9) + 1 - nm);
+            line = line.substr(0, open) + "<Button Tag=\"{StaticResource FH2Mouse_Item_Where}\" local:BindingProxy.A=\"" +
+                   xml_escape(lang::tr("Keys and mouse")) + "\" local:BindingProxy.C=\"" + xml_escape(lang::tr("Keyboard & Mouse")) +
+                   "\" local:BindingProxy.B=\"\" Template=\"{StaticResource FH2Mod_InfoRow}\"" + keep + " />" + line.substr(close + 2);
+            line_made = true;
+        } else {
+            line.insert(close, " Visibility=\"Collapsed\" Focusable=\"False\" ");
+            ++hidden;
+        }
+        page.replace(p, e - p, line);
+        const std::size_t grown = line.size() - (e - p);
+        p = e + grown;
+        le += grown;
+    }
+    if (!line_made) return false;
+    page.insert(first_item, "            <local:TileMenuDataItem x:Key=\"FH2Mouse_Item_Where\" Heading=\"" + xml_escape(lang::tr("Keys and mouse")) +
+                                "\" Description=\"" +
+                                xml_escape(lang::tr("The keys and the mouse are set on their own page: Pause > Settings > Keyboard & Mouse. The controller's buttons are under Pause > Settings > Controls.")) +
+                                "\" Icon=\"\" />\r\n");
+    static std::atomic<bool> told{false};
+    if (!told.exchange(true)) logf("MODS > YOUR MODS: our page points at Keyboard & Mouse (%d rows of ours hidden there)", hidden + 1);
     return true;
 }
 
@@ -5431,10 +5568,14 @@ void edit_page(void** out) {
         if (!g_kbm_tile.exchange(true)) logf("Pause > Settings: Keyboard & Mouse tile added");   // the page is read each time it shows
         return;
     }
-    // Only the Mods page opened by our tile (just after it was pressed) is ours to change.
+    // The Mods page opened by our tile (just after it was pressed) shows only our rows; YOUR MODS, a
+    // line saying where they are instead of them (unless the tile isn't there).
     if (g_kbm_failed.load()) return;
     const uint64_t opening = g_kbm_opening.exchange(0);
-    if (!opening || GetTickCount64() - opening >= 5000) return;
+    if (!opening || GetTickCount64() - opening >= 5000) {
+        if (hide_rows_on_mod_page(text)) replace_resource(out, text);
+        return;
+    }
     if (filter_mods_page(text)) {
         if (replace_resource(out, text)) find_descriptors();
     } else {
